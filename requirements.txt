@@ -1,0 +1,10 @@
+groq
+requests
+gspread
+google-auth
+feedparser
+pyyaml
+python-dotenv
+tenacity
+pillow
+moviepy

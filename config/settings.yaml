@@ -1,0 +1,10 @@
+brand: Daily Present
+niche: us_political_news
+timezone: America/New_York
+schedule:
+  image_posts_per_day: 1
+  carousels_per_week: 3
+  reels_per_week: 2
+verification:
+  min_independent_sources: 2
+  max_source_age_hours: 48

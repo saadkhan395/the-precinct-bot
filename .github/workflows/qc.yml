@@ -1,0 +1,19 @@
+name: Quality Check
+on:
+  workflow_dispatch:
+jobs:
+  qc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pip install requests feedparser pyyaml gspread google-auth groq pillow
+      - run: python src/qc/run_qc.py
+        env:
+          PYTHONPATH: src
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}

@@ -1,0 +1,28 @@
+name: Make Reel Post
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  make-reel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - run: pip install requests feedparser pyyaml gspread google-auth groq pillow
+      - run: python src/generate/make_reel_post.py
+        env:
+          PYTHONPATH: src
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      - name: Save video to repo
+        run: |
+          git config user.name "daily-present-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add output/reels
+          git diff --cached --quiet || git commit -m "Add generated reel"
+          git push

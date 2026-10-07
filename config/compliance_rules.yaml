@@ -1,0 +1,23 @@
+caption:
+  max_chars: 2200
+  min_hashtags: 3
+  max_hashtags: 30
+headline:
+  min_words: 4
+  max_words: 18
+banned_phrases:
+  - you won't believe
+  - shocking
+  - bombshell
+  - miracle
+  - share before it's deleted
+  - they don't want you to know
+  - vote for
+  - vote against
+media:
+  image_size: [1080, 1350]
+  video_size: [1080, 1920]
+  video_min_seconds: 3
+  video_max_seconds: 90
+  carousel_min_slides: 2
+  carousel_max_slides: 10

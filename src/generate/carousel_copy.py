@@ -1,4 +1,5 @@
 import os
+import re
 
 from groq import Groq
 
@@ -8,7 +9,8 @@ SYSTEM = """You write carousel posts for The Daily Precinct, a US political news
 Voice: calm, sharp, plain English. Politics without the noise.
 STRICT RULES:
 - Use ONLY facts that appear in the SOURCE TEXT you are given. If a detail is not there, leave it out. Never invent names, numbers, dates, quotes or causes.
-- Write in your own words. Do not copy sentences from the source text.
+- Mention a person, place, organization, event or date ONLY if its name appears in the SOURCE TEXT. Never add background, history or context from your own knowledge.
+- Every point must restate something the SOURCE TEXT says, in your own words.
 - Neutral and non-partisan. No insults, no speculation, no calls to vote.
 - If the source text supports only a few points, return fewer points.
 Return ONLY a JSON object, nothing else, with exactly these keys:
@@ -48,15 +50,33 @@ def clean_copy(data):
     return data
 
 
+def invented_names(copy, source_text, headline):
+    ref = (source_text + " " + headline).lower()
+    chunks = [copy["cover_headline"], copy["caption"]]
+    chunks += [p for s in copy["slides"] for p in s["points"]]
+    bad = set()
+    for chunk in chunks:
+        for sent in re.split(r"(?<=[.!?])\s+", chunk):
+            for w in sent.split()[1:]:
+                w2 = re.sub(r"[^A-Za-z'-]", "", w)
+                if len(w2) > 2 and w2[0].isupper():
+                    base = re.sub(r"'s?$", "", w2).lower()
+                    if base not in ref:
+                        bad.add(w2)
+    return sorted(bad)
+
+
 def write_carousel(headline, outlets, source_text):
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
     model = pick_model(client)
-    user = (
+    base_user = (
         f"Headline: {headline}\nReported by: {outlets}\n\n"
         f"SOURCE TEXT:\n{source_text}"
     )
-    last = None
-    for _ in range(2):
+    user = base_user
+    last_error = None
+    last_copy = None
+    for _ in range(3):
         try:
             resp = client.chat.completions.create(
                 model=model,
@@ -64,9 +84,22 @@ def write_carousel(headline, outlets, source_text):
                     {"role": "system", "content": SYSTEM},
                     {"role": "user", "content": user},
                 ],
-                temperature=0.4,
+                temperature=0.2,
             )
-            return clean_copy(parse_json(resp.choices[0].message.content))
+            copy = clean_copy(parse_json(resp.choices[0].message.content))
         except Exception as e:
-            last = e
-    raise RuntimeError(f"Groq carousel copy failed: {last}")
+            last_error = e
+            continue
+        last_copy = copy
+        bad = invented_names(copy, source_text, headline)
+        if not bad:
+            return copy
+        user = (
+            base_user
+            + "\n\nYour last draft used names or words that are NOT in the SOURCE TEXT: "
+            + ", ".join(bad)
+            + ". Rewrite it and remove them."
+        )
+    if last_copy:
+        return last_copy
+    raise RuntimeError(f"Groq carousel copy failed: {last_error}")

@@ -1,0 +1,19 @@
+feeds:
+  - name: NPR
+    url: https://feeds.npr.org/1014/rss.xml
+  - name: BBC News
+    url: https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml
+  - name: New York Times
+    url: https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml
+  - name: The Guardian
+    url: https://www.theguardian.com/us-news/us-politics/rss
+  - name: CBS News
+    url: https://www.cbsnews.com/latest/rss/politics
+  - name: Politico
+    url: https://rss.politico.com/politics-news.xml
+  - name: The Hill
+    url: https://thehill.com/homenews/feed/
+  - name: Fox News
+    url: https://moxie.foxnews.com/google-publisher/politics.xml
+  - name: ABC News
+    url: https://abcnews.go.com/abcnews/politicsheadlines

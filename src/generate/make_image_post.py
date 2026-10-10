@@ -53,7 +53,7 @@ def pick_story(research_ws, used_ids, max_age_hours):
         if r.get("Status") != "Verified":
             continue
         cid = "IMG-" + str(r["Cluster ID"])
-        if cid in used_ids:
+        if any(f"{p}-{cid[4:]}" in used_ids for p in ("IMG", "CAR", "REEL")):
             continue
         try:
             earliest = datetime.fromisoformat(str(r["Earliest Published (UTC)"]))

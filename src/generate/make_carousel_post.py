@@ -16,7 +16,7 @@ def candidates(research_ws, used_ids, max_age_hours):
         if r.get("Status") != "Verified":
             continue
         cid = str(r["Cluster ID"])
-        if f"IMG-{cid}" in used_ids or f"CAR-{cid}" in used_ids:
+        if any(f"{p}-{cid}" in used_ids for p in ("IMG", "CAR", "REEL")):
             continue
         try:
             earliest = datetime.fromisoformat(str(r["Earliest Published (UTC)"]))

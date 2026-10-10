@@ -11,6 +11,7 @@ STRICT RULES:
 - Use ONLY facts that appear in the SOURCE TEXT you are given. If a detail is not there, leave it out. Never invent names, numbers, dates, quotes or causes.
 - Mention a person, place, organization, event or date ONLY if its name appears in the SOURCE TEXT. Never add background, history or context from your own knowledge.
 - Every point must restate something the SOURCE TEXT says, in your own words.
+- Facts only. No analysis, opinion or commentary. Never write what something "highlights", "underscores", "signals", "reveals" or means, and never mention "stakes".
 - Neutral and non-partisan. No insults, no speculation, no calls to vote.
 - If the source text supports only a few points, return fewer points.
 Return ONLY a JSON object, nothing else, with exactly these keys:
@@ -23,7 +24,12 @@ Return ONLY a JSON object, nothing else, with exactly these keys:
  "caption": "2 short sentences, max 300 characters, no new facts",
  "cta": "one short line asking readers to follow or share, max 90 characters",
  "hashtags": ["#USPolitics", "#PoliticsNews", "#DailyPrecinct"]}
-Each slide has 2 or 3 points. Use 3 to 5 hashtags."""
+Each slide has 2 points. Use 3 to 5 hashtags."""
+
+COMMENTARY = (
+    "highlight", "underscore", "signal", "reveal", "stakes", "raises questions",
+    "sheds light", "paints a picture", "crucial", "significant", "the clash",
+)
 
 
 def clean_copy(data):
@@ -66,6 +72,14 @@ def invented_names(copy, source_text, headline):
     return sorted(bad)
 
 
+def commentary_hits(copy):
+    text = " ".join(
+        [copy["cover_headline"], copy["caption"]]
+        + [p for s in copy["slides"] for p in s["points"]]
+    ).lower()
+    return [w for w in COMMENTARY if w in text]
+
+
 def write_carousel(headline, outlets, source_text):
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
     model = pick_model(client)
@@ -92,13 +106,19 @@ def write_carousel(headline, outlets, source_text):
             continue
         last_copy = copy
         bad = invented_names(copy, source_text, headline)
-        if not bad:
+        comment = commentary_hits(copy)
+        if not bad and not comment:
             return copy
+        notes = []
+        if bad:
+            notes.append("names or words NOT in the SOURCE TEXT: " + ", ".join(bad))
+        if comment:
+            notes.append("commentary words (facts only): " + ", ".join(comment))
         user = (
             base_user
-            + "\n\nYour last draft used names or words that are NOT in the SOURCE TEXT: "
-            + ", ".join(bad)
-            + ". Rewrite it and remove them."
+            + "\n\nYour last draft had problems: "
+            + "; ".join(notes)
+            + ". Rewrite it and fix them."
         )
     if last_copy:
         return last_copy

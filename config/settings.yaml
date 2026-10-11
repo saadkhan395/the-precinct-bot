@@ -1,4 +1,4 @@
-brand: the daily precinct 
+brand: the daily precinct
 niche: us_political_news
 timezone: America/New_York
 schedule:
@@ -8,3 +8,24 @@ schedule:
 verification:
   min_independent_sources: 2
   max_source_age_hours: 48
+
+# Step 12: scheduler assigns approved content to these local-time slots.
+# day: Monday=0 ... Sunday=6; times use 24-hour HH:MM.
+scheduling:
+  horizon_days: 21
+  slots:
+    image:
+      - {day: 0, time: "10:00"}
+      - {day: 1, time: "10:00"}
+      - {day: 2, time: "10:00"}
+      - {day: 3, time: "10:00"}
+      - {day: 4, time: "10:00"}
+      - {day: 5, time: "10:00"}
+      - {day: 6, time: "10:00"}
+    carousel:
+      - {day: 0, time: "12:00"}
+      - {day: 2, time: "12:00"}
+      - {day: 4, time: "12:00"}
+    reel:
+      - {day: 1, time: "18:00"}
+      - {day: 3, time: "18:00"}

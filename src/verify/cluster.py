@@ -1,31 +1,29 @@
 """Headline clustering and multi-source verification.
 
-BUG-1 FIX: tightened thresholds and added a proper-noun overlap guard so that
-unrelated political headlines sharing only generic vocabulary
-("Democrats", "Senate", "Trump") are no longer merged into one cluster.
+BUG-1 v2: thresholds retuned after v1 was too strict. Added proper-noun
+overlap check which prevents topic collisions. v1's jaccard=0.45 rejected
+genuine multi-outlet matches; v2 uses 0.35 with name overlap required.
 """
 import hashlib
 import re
 
 # Generic political vocabulary that must NOT be treated as a distinguishing
-# signal on its own. Two headlines sharing only these words are not the same
-# story.
+# signal on its own.
 STOP = {
     "the", "and", "for", "that", "with", "this", "from", "have", "has",
     "are", "was", "were", "will", "after", "over", "into", "says", "say",
     "said", "new", "his", "her", "its", "their", "about", "than", "but",
     "not", "who", "what", "how", "why", "you", "your", "can", "could",
     "would", "should", "more", "amid", "out", "off", "all", "one", "two",
-    # Generic political terms — too common to prove two headlines match.
+    # Generic political terms.
     "democrat", "democrats", "republican", "republicans", "senate", "house",
     "congress", "president", "trump", "biden", "white", "state", "states",
     "law", "bill", "vote", "votes", "election", "elections", "poll", "polls",
     "campaign", "administration", "government", "official", "officials",
-    "report", "reports", "reported", "according", "amid", "deal", "plan",
+    "report", "reports", "reported", "according", "deal", "plan",
     "plans", "news", "update", "updates", "today", "week", "year",
 }
 
-# Common sentence-starting words that shouldn't count as distinguishing names.
 SENTENCE_STARTERS = {
     "the", "a", "an", "this", "that", "these", "those", "it", "its",
     "his", "her", "their", "there", "here", "what", "when", "where",
@@ -35,23 +33,16 @@ SENTENCE_STARTERS = {
 
 
 def tokens(text):
-    """Lowercased word set, minus stopwords and very short tokens."""
     words = re.findall(r"[a-z0-9']+", text.lower())
     return {w for w in words if len(w) > 2 and w not in STOP}
 
 
 def proper_nouns(text):
-    """Capitalized words that appear mid-sentence.
-
-    Skips the first word of each sentence (which is always capitalized in
-    proper English) and skips common sentence-starters.
-    """
-    # Split on sentence boundaries, keep it simple.
+    """Capitalized words that appear mid-sentence."""
     sentences = re.split(r"(?<=[.!?])\s+", text.strip())
     names = set()
     for sent in sentences:
         words = re.findall(r"[A-Za-z][A-Za-z'\-]+", sent)
-        # Skip first word of the sentence.
         for w in words[1:]:
             if len(w) < 3:
                 continue
@@ -63,30 +54,25 @@ def proper_nouns(text):
 
 
 def similar(a_tokens, b_tokens, a_names, b_names, min_jaccard, min_shared, min_name_overlap):
-    """Two headlines are similar if:
-       1. They share at least `min_shared` tokens, AND
-       2. Their token Jaccard is at least `min_jaccard`, AND
-       3. They share at least `min_name_overlap` mid-sentence proper nouns.
-    """
     shared = a_tokens & b_tokens
     if len(shared) < min_shared:
         return False
     jac = len(shared) / len(a_tokens | b_tokens)
     if jac < min_jaccard:
         return False
-    # Proper-noun guard: must share at least one named entity that isn't a
-    # generic political term.
+    # If both have proper nouns, require overlap.
+    # If either has none, allow the match (short headlines often lack them).
     if a_names and b_names:
         if len(a_names & b_names) < min_name_overlap:
             return False
     return True
 
 
-def cluster_items(items, min_jaccard=0.45, min_shared=4, min_name_overlap=1):
-    """Cluster items by title similarity.
+def cluster_items(items, min_jaccard=0.35, min_shared=3, min_name_overlap=1):
+    """BUG-1 v2: 0.35/3 with proper-noun guard.
 
-    BUG-1 FIX: defaults raised from (0.30, 3) to (0.45, 4) and a proper-noun
-    overlap requirement was added.
+    This still blocks the 'Democrats/Paramount' collision because those two
+    headlines share no mid-sentence proper nouns.
     """
     clusters = []
     for it in sorted(items, key=lambda x: x["published"]):
@@ -97,7 +83,6 @@ def cluster_items(items, min_jaccard=0.45, min_shared=4, min_name_overlap=1):
             if similar(toks, c["tokens"], names, c["names"],
                        min_jaccard, min_shared, min_name_overlap):
                 c["items"].append(it)
-                # Merge new tokens/names so the cluster grows stably.
                 c["tokens"] |= toks
                 c["names"] |= names
                 placed = True

@@ -1,3 +1,9 @@
+"""Carousel copy generation with strict source-grounding and commentary guard.
+
+BUG-2 FIX: if 3 attempts all fail the commentary / invented-name check, raise
+instead of silently returning the last bad draft. This makes QC reject the row
+so it can be retried or fixed by a human, instead of publishing misleading copy.
+"""
 import os
 import re
 
@@ -26,17 +32,28 @@ Return ONLY a JSON object, nothing else, with exactly these keys:
  "hashtags": ["#USPolitics", "#PoliticsNews", "#DailyPrecinct"]}
 Each slide has 2 points. Use 3 to 5 hashtags."""
 
+# Words and phrases that are analysis/commentary, not fact-reporting.
+# If any appear in generated copy, we reject and regenerate.
 COMMENTARY = (
-    "highlight", "underscore", "signal", "reveal", "stakes", "raises questions",
-    "sheds light", "paints a picture", "crucial", "significant", "the clash",
+    "highlight", "highlights", "highlighted",
+    "underscore", "underscores", "underscored",
+    "signal", "signals", "signaled", "signalled",
+    "reveal", "reveals", "revealed",
+    "stakes", "raise questions", "raises questions", "raised questions",
+    "shed light", "sheds light", "shedding light",
+    "paint a picture", "paints a picture",
+    "crucial", "significant", "significance",
+    "the clash",
 )
 
 
 def clean_copy(data):
+    """Validate structure. Raise on missing fields."""
     for key in ("hook", "cover_headline", "caption", "cta"):
         if not isinstance(data.get(key), str) or not data[key].strip():
             raise ValueError(f"Missing field: {key}")
         data[key] = data[key].strip()
+
     slides = []
     for s in data.get("slides") or []:
         title = str(s.get("title", "")).strip()[:30]
@@ -48,21 +65,25 @@ def clean_copy(data):
     if not slides:
         raise ValueError("No usable slides")
     data["slides"] = slides[:3]
+
     tags = data.get("hashtags") or []
     tags = [t if t.startswith("#") else "#" + t for t in tags if isinstance(t, str)]
     data["hashtags"] = tags[:5] or ["#USPolitics", "#DailyPrecinct"]
+
     data["caption"] = data["caption"][:320]
     data["cta"] = data["cta"][:100]
     return data
 
 
 def invented_names(copy, source_text, headline):
+    """Find capitalized words in copy that don't appear in the source."""
     ref = (source_text + " " + headline).lower()
     chunks = [copy["cover_headline"], copy["caption"]]
     chunks += [p for s in copy["slides"] for p in s["points"]]
     bad = set()
     for chunk in chunks:
         for sent in re.split(r"(?<=[.!?])\s+", chunk):
+            # Skip first word of each sentence — often capitalized by grammar.
             for w in sent.split()[1:]:
                 w2 = re.sub(r"[^A-Za-z'-]", "", w)
                 if len(w2) > 2 and w2[0].isupper():
@@ -73,6 +94,7 @@ def invented_names(copy, source_text, headline):
 
 
 def commentary_hits(copy):
+    """Find commentary/analysis words in generated copy."""
     text = " ".join(
         [copy["cover_headline"], copy["caption"]]
         + [p for s in copy["slides"] for p in s["points"]]
@@ -81,6 +103,7 @@ def commentary_hits(copy):
 
 
 def write_carousel(headline, outlets, source_text):
+    """Generate carousel copy. Raises if 3 attempts all fail."""
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
     model = pick_model(client)
     base_user = (
@@ -90,7 +113,10 @@ def write_carousel(headline, outlets, source_text):
     user = base_user
     last_error = None
     last_copy = None
-    for _ in range(3):
+    last_bad = []
+    last_comment = []
+
+    for attempt in range(3):
         try:
             resp = client.chat.completions.create(
                 model=model,
@@ -104,11 +130,17 @@ def write_carousel(headline, outlets, source_text):
         except Exception as e:
             last_error = e
             continue
+
         last_copy = copy
         bad = invented_names(copy, source_text, headline)
         comment = commentary_hits(copy)
+        last_bad = bad
+        last_comment = comment
+
         if not bad and not comment:
             return copy
+
+        # Build feedback for the next attempt.
         notes = []
         if bad:
             notes.append("names or words NOT in the SOURCE TEXT: " + ", ".join(bad))
@@ -120,6 +152,11 @@ def write_carousel(headline, outlets, source_text):
             + "; ".join(notes)
             + ". Rewrite it and fix them."
         )
-    if last_copy:
-        return last_copy
-    raise RuntimeError(f"Groq carousel copy failed: {last_error}")
+
+    # BUG-2 FIX: do NOT return last_copy. Raise so QC rejects.
+    raise RuntimeError(
+        f"Groq carousel copy failed after 3 attempts. "
+        f"Invented names: {last_bad or 'none'}. "
+        f"Commentary hits: {last_comment or 'none'}. "
+        f"Last error: {last_error}"
+)

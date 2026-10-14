@@ -1,3 +1,8 @@
+"""QC orchestrator.
+
+BUG-3 FIX: now runs check_commentary() so editorial language is rejected
+before content is approved.
+"""
 from datetime import datetime, timezone
 
 import gspread
@@ -6,6 +11,7 @@ from generate.make_image_post import connect, get_content_ws
 from generate.story_text import get_story_text
 from qc.ai_review import review, to_checks
 from qc.checks import (
+    check_commentary,
     check_duplicate,
     check_media,
     check_sources,
@@ -62,6 +68,7 @@ def main():
 
         checks = []
         checks += check_text(row, rules)
+        checks.append(check_commentary(row))  # BUG-3 FIX
         checks += check_sources(row, min_sources, max_age)
         checks += check_media(row, rules)
         checks.append(check_duplicate(idx, rows))

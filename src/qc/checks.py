@@ -1,3 +1,8 @@
+"""Deterministic QC checks for content rows.
+
+BUG-3 FIX: added check_commentary() so QC rejects drafts that contain
+analysis/editorial language instead of plain fact reporting.
+"""
 import os
 import re
 from datetime import datetime, timezone
@@ -7,6 +12,19 @@ import yaml
 from PIL import Image
 
 from media.build_video import probe
+
+# Words that indicate editorial/analysis rather than fact reporting.
+COMMENTARY_WORDS = [
+    "highlight", "highlights", "highlighted",
+    "underscore", "underscores", "underscored",
+    "signal", "signals", "signaled", "signalled",
+    "reveal", "reveals", "revealed",
+    "stakes", "raise questions", "raises questions", "raised questions",
+    "shed light", "sheds light", "shedding light",
+    "paint a picture", "paints a picture",
+    "crucial", "significant", "significance",
+    "the clash",
+]
 
 DEFAULTS = {
     "caption": {"max_chars": 2200, "min_hashtags": 3, "max_hashtags": 30},
@@ -84,6 +102,26 @@ def check_text(row, rules):
     ok = h["min_words"] <= words <= h["max_words"] and not (topic.isupper() and words > 2)
     out.append(res("headline_quality", ok, f"{words} words"))
     return out
+
+
+def check_commentary(row):
+    """BUG-3 FIX: reject editorial / analysis language in copy."""
+    fields = {
+        "topic": str(row.get("Topic", "")),
+        "caption": str(row.get("Caption", "")),
+        "alt": str(row.get("Alt Text", "")),
+    }
+    hits_by_field = {}
+    for name, text in fields.items():
+        low = text.lower()
+        found = [w for w in COMMENTARY_WORDS if w in low]
+        if found:
+            hits_by_field[name] = found
+
+    if hits_by_field:
+        detail = "; ".join(f"{k}: {', '.join(v)}" for k, v in hits_by_field.items())
+        return res("commentary_free", False, detail[:300])
+    return res("commentary_free", True, "")
 
 
 def check_sources(row, min_sources, max_age_hours, check_links=True):

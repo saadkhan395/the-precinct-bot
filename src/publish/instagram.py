@@ -118,10 +118,19 @@ def publish_carousel(slide_urls: list, caption: str) -> str:
 
 
 def publish_reel(video_url: str, caption: str) -> str:
+    """Publish a reel to Instagram, ensuring it shares to the main feed.
+
+    Fix: adds share_to_feed=true so the Reel appears in the profile grid
+    and to followers' main feeds, not just the Reels tab.
+    """
     cid = _create_container({
         "media_type": "REELS",
         "video_url": video_url,
         "caption": caption,
+        "share_to_feed": "true",
+    })
+    _wait_until_ready(cid, max_wait=180)
+    return _publish_container(cid)
     })
     _wait_until_ready(cid, max_wait=180)
     return _publish_container(cid)

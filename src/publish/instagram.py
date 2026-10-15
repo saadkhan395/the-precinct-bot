@@ -1,7 +1,7 @@
 """Instagram publishing via Instagram API.
 
-BUG FIX: poll container status before publishing images and carousels.
-Instagram needs a few seconds to finish processing the container.
+Requires public URLs for every image and video. Repo is public, so we
+use raw.githubusercontent.com URLs.
 """
 from __future__ import annotations
 
@@ -58,11 +58,6 @@ def _publish_container(creation_id: str) -> str:
 
 
 def _wait_until_ready(creation_id: str, max_wait: int = 60, interval: int = 3) -> None:
-    """Poll container status until FINISHED or error.
-
-    For images/carousels this usually returns immediately on first poll.
-    For reels it can take 30-120s. Bounded by max_wait.
-    """
     start = time.time()
     last_code = ""
     while time.time() - start < max_wait:
@@ -78,13 +73,9 @@ def _wait_until_ready(creation_id: str, max_wait: int = 60, interval: int = 3) -
             if last_code in ("ERROR", "EXPIRED"):
                 raise RuntimeError(f"Instagram container failed: {r.text[:400]}")
         elif r.status_code == 400:
-            # Some image containers error on status query but are still fine
-            # to publish. Give it one extra try then give up on polling.
             time.sleep(interval)
             continue
         time.sleep(interval)
-    # If we timed out on an image (never goes to FINISHED), try publishing
-    # anyway — the actual publish call is the ground truth.
     if last_code and last_code not in ("FINISHED", "ERROR", "EXPIRED"):
         return
 
@@ -104,7 +95,6 @@ def publish_carousel(slide_urls: list, caption: str) -> str:
         for url in slide_urls
     ]
 
-    # Wait for each child container to be ready.
     for child in children:
         _wait_until_ready(child, max_wait=45)
 
@@ -118,19 +108,11 @@ def publish_carousel(slide_urls: list, caption: str) -> str:
 
 
 def publish_reel(video_url: str, caption: str) -> str:
-    """Publish a reel to Instagram, ensuring it shares to the main feed.
-
-    Fix: adds share_to_feed=true so the Reel appears in the profile grid
-    and to followers' main feeds, not just the Reels tab.
-    """
     cid = _create_container({
         "media_type": "REELS",
         "video_url": video_url,
         "caption": caption,
         "share_to_feed": "true",
-    })
-    _wait_until_ready(cid, max_wait=180)
-    return _publish_container(cid)
     })
     _wait_until_ready(cid, max_wait=180)
     return _publish_container(cid)

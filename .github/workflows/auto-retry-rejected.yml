@@ -3,7 +3,8 @@ name: Automatic Retry for Rejected Content
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/30 * * * *"
+    # Every 2 hours, offset by 40 min so it runs after QC.
+    - cron: "40 */2 * * *"
 
 permissions:
   contents: read

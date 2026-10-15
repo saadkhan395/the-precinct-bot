@@ -1,12 +1,10 @@
 """Facebook Page publishing via Graph API.
 
-Publishes image, carousel (as multi-photo post), and reel (as video) to a
-Facebook Page. Reads config from environment variables set by the workflow.
-
-Uses only standard library + requests. Never hard-codes credentials.
+BUG FIX: attached_media must be JSON-encoded string, not a Python list.
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -31,13 +29,9 @@ def _page_id() -> str:
 
 
 def _upload_unpublished_photo(image_path: Path) -> str:
-    """Upload a photo as unpublished and return its media_fbid."""
     with image_path.open("rb") as f:
         files = {"source": f}
-        data = {
-            "published": "false",
-            "access_token": _token(),
-        }
+        data = {"published": "false", "access_token": _token()}
         r = requests.post(
             f"{GRAPH}/{_page_id()}/photos",
             data=data,
@@ -50,13 +44,9 @@ def _upload_unpublished_photo(image_path: Path) -> str:
 
 
 def publish_image(image_path: Path, caption: str) -> str:
-    """Publish a single-image post. Returns the FB post ID."""
     with image_path.open("rb") as f:
         files = {"source": f}
-        data = {
-            "caption": caption,
-            "access_token": _token(),
-        }
+        data = {"caption": caption, "access_token": _token()}
         r = requests.post(
             f"{GRAPH}/{_page_id()}/photos",
             data=data,
@@ -75,7 +65,8 @@ def publish_carousel(slide_paths: list, caption: str) -> str:
         raise RuntimeError("No slide paths supplied")
 
     media_ids = [_upload_unpublished_photo(p) for p in slide_paths]
-    attached = [{"media_fbid": mid} for mid in media_ids]
+    # FIX: send attached_media as a JSON-encoded STRING, not a Python list.
+    attached = json.dumps([{"media_fbid": mid} for mid in media_ids])
 
     r = requests.post(
         f"{GRAPH}/{_page_id()}/feed",
@@ -92,13 +83,9 @@ def publish_carousel(slide_paths: list, caption: str) -> str:
 
 
 def publish_reel(video_path: Path, caption: str) -> str:
-    """Publish a video to the Facebook Page. Returns the FB post ID."""
     with video_path.open("rb") as f:
         files = {"source": f}
-        data = {
-            "description": caption,
-            "access_token": _token(),
-        }
+        data = {"description": caption, "access_token": _token()}
         r = requests.post(
             f"{GRAPH}/{_page_id()}/videos",
             data=data,

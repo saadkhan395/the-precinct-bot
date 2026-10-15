@@ -16,19 +16,52 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import gspread
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from generate.make_image_post import connect, get_content_ws  # noqa: E402
-from publish import facebook, instagram  # noqa: E402
+from publish import facebook, instagram
 
 
 MAX_PER_RUN = 5
+CONTENT_HEADERS = [
+    "Content ID",
+    "Content Type",
+    "Topic",
+    "Source",
+    "Source URL",
+    "Source Publication Date",
+    "Research Date",
+    "Creation Date",
+    "Status",
+    "Scheduled Time",
+    "Published Time",
+    "Facebook Post ID",
+    "Instagram Media ID",
+    "Caption",
+    "Alt Text",
+    "Creative Format",
+    "Competitor Inspiration Category",
+    "Validation Result",
+    "Error Message",
+]
+
+
+def connect():
+    info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
+    gc = gspread.service_account_from_dict(info)
+    return gc.open_by_key(os.environ["GOOGLE_SHEET_ID"])
+
+
+def get_content_ws(sh):
+    try:
+        ws = sh.worksheet("Content")
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet(title="Content", rows=1000, cols=len(CONTENT_HEADERS))
+    if not ws.row_values(1):
+        ws.append_row(CONTENT_HEADERS)
+    return ws
 
 
 def _get(value, default=""):
@@ -37,7 +70,7 @@ def _get(value, default=""):
     return str(value).strip()
 
 
-def _parse_time(raw: str) -> datetime | None:
+def _parse_time(raw: str):
     raw = raw.strip()
     if not raw:
         return None
@@ -83,11 +116,7 @@ def _set_cell(ws, col, sheet_row, name, value):
 
 def main():
     sh = connect()
-    try:
-        content_ws = get_content_ws(sh)
-    except Exception as e:
-        print(f"FATAL: cannot open Content tab: {e}")
-        return
+    content_ws = get_content_ws(sh)
 
     headers = content_ws.row_values(1)
     col = {h: i + 1 for i, h in enumerate(headers)}
@@ -104,7 +133,6 @@ def main():
         fb_id = _get(row.get("Facebook Post ID"))
         ig_id = _get(row.get("Instagram Media ID"))
         if fb_id and ig_id:
-            # Both already done; fix status and skip.
             _set_cell(content_ws, col, idx, "Status", "Published")
             continue
         due.append((idx, row, fb_id, ig_id))
@@ -181,7 +209,7 @@ def main():
         else:
             print(f"PARTIAL: {cid} (FB={bool(fb_result)}, IG={bool(ig_result)})")
 
-    print(f"\nDone. Fully published: {published}/{len(due[:MAX_PER_RUN])}")
+    print(f"\nDONE. Fully published: {published}")
 
 
 if __name__ == "__main__":

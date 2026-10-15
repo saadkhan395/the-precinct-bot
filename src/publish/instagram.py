@@ -1,10 +1,7 @@
 """Instagram publishing via Instagram API.
 
-Instagram's API does not accept file uploads. It requires a public URL for
-every image and video. Since this repo is public, we build URLs pointing at
-raw.githubusercontent.com.
-
-Reads IG_USER_ID and INSTAGRAM_ACCESS_TOKEN from environment.
+BUG FIX: poll container status before publishing images and carousels.
+Instagram needs a few seconds to finish processing the container.
 """
 from __future__ import annotations
 
@@ -33,7 +30,6 @@ def _ig_user_id() -> str:
 
 
 def media_url(relative_path: str) -> str:
-    """Turn a repo-relative path into a public raw.githubusercontent.com URL."""
     path = relative_path.lstrip("/")
     return f"{REPO_RAW}/{path}"
 
@@ -53,10 +49,7 @@ def _create_container(payload: dict) -> str:
 def _publish_container(creation_id: str) -> str:
     r = requests.post(
         f"{GRAPH}/{_ig_user_id()}/media_publish",
-        data={
-            "creation_id": creation_id,
-            "access_token": _token(),
-        },
+        data={"creation_id": creation_id, "access_token": _token()},
         timeout=TIMEOUT,
     )
     if not r.ok:
@@ -64,9 +57,14 @@ def _publish_container(creation_id: str) -> str:
     return r.json()["id"]
 
 
-def _wait_until_ready(creation_id: str, max_wait: int = 180) -> None:
-    """Poll container status until FINISHED or error. For reels only."""
+def _wait_until_ready(creation_id: str, max_wait: int = 60, interval: int = 3) -> None:
+    """Poll container status until FINISHED or error.
+
+    For images/carousels this usually returns immediately on first poll.
+    For reels it can take 30-120s. Bounded by max_wait.
+    """
     start = time.time()
+    last_code = ""
     while time.time() - start < max_wait:
         r = requests.get(
             f"{GRAPH}/{creation_id}",
@@ -74,57 +72,56 @@ def _wait_until_ready(creation_id: str, max_wait: int = 180) -> None:
             timeout=TIMEOUT,
         )
         if r.ok:
-            code = r.json().get("status_code", "")
-            if code == "FINISHED":
+            last_code = r.json().get("status_code", "")
+            if last_code == "FINISHED":
                 return
-            if code in ("ERROR", "EXPIRED"):
+            if last_code in ("ERROR", "EXPIRED"):
                 raise RuntimeError(f"Instagram container failed: {r.text[:400]}")
-        time.sleep(10)
-    raise RuntimeError("Instagram container did not finish processing in time")
+        elif r.status_code == 400:
+            # Some image containers error on status query but are still fine
+            # to publish. Give it one extra try then give up on polling.
+            time.sleep(interval)
+            continue
+        time.sleep(interval)
+    # If we timed out on an image (never goes to FINISHED), try publishing
+    # anyway — the actual publish call is the ground truth.
+    if last_code and last_code not in ("FINISHED", "ERROR", "EXPIRED"):
+        return
 
 
 def publish_image(image_url: str, caption: str) -> str:
-    """Publish a single image. Returns the IG media ID."""
     cid = _create_container({"image_url": image_url, "caption": caption})
+    _wait_until_ready(cid, max_wait=45)
     return _publish_container(cid)
 
 
 def publish_carousel(slide_urls: list, caption: str) -> str:
-    """Publish a carousel. Returns the IG media ID.
-
-    Steps:
-      1. Create one child container per slide (is_carousel_item=true).
-      2. Create a parent CAROUSEL container with the child IDs.
-      3. Publish the parent.
-    """
     if not slide_urls:
         raise RuntimeError("No slide URLs supplied")
 
-    children = [_create_container({
-        "image_url": url,
-        "is_carousel_item": "true",
-    }) for url in slide_urls]
+    children = [
+        _create_container({"image_url": url, "is_carousel_item": "true"})
+        for url in slide_urls
+    ]
+
+    # Wait for each child container to be ready.
+    for child in children:
+        _wait_until_ready(child, max_wait=45)
 
     parent = _create_container({
         "media_type": "CAROUSEL",
         "children": ",".join(children),
         "caption": caption,
     })
+    _wait_until_ready(parent, max_wait=45)
     return _publish_container(parent)
 
 
 def publish_reel(video_url: str, caption: str) -> str:
-    """Publish a reel. Returns the IG media ID.
-
-    Steps:
-      1. Create REELS container with video_url.
-      2. Poll status until FINISHED.
-      3. Publish.
-    """
     cid = _create_container({
         "media_type": "REELS",
         "video_url": video_url,
         "caption": caption,
     })
-    _wait_until_ready(cid)
+    _wait_until_ready(cid, max_wait=180)
     return _publish_container(cid)

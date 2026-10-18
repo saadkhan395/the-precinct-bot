@@ -70,17 +70,17 @@ def main():
         return
 
     outlets = story["Outlets"]
+    source_urls = story["Source URLs"]
     print(f"Story: {story['Headline']} ({outlets})")
     copy = write_copy(story["Headline"], outlets)
     
     print("Fetching background image...")
-    image_url = get_image_for_headline(story["Headline"])
+    image_url = get_image_for_headline(story["Headline"], source_urls)
     
     path, style = render_post(
         cid, copy["hook"], copy["headline"], outlets, int(story["Source Count"]), image_count, image_url
     )
 
-    # Build the full caption with the new paragraph structure
     caption = f"{copy['caption']}\n\n{copy['cta']}\n\nSources: {outlets}\n\n" + " ".join(copy["hashtags"])
     alt = f"News graphic from The Daily Precinct. Headline: {copy['headline']}. Reported by {outlets}."
     
@@ -89,7 +89,7 @@ def main():
         "Content Type": "image",
         "Topic": story["Headline"],
         "Source": outlets,
-        "Source URL": story["Source URLs"],
+        "Source URL": source_urls,
         "Source Publication Date": story["Earliest Published (UTC)"],
         "Research Date": story["Research Timestamp (UTC)"],
         "Creation Date": datetime.now(timezone.utc).isoformat(timespec="seconds"),

@@ -11,25 +11,30 @@ THEMES = [
     "Election", "Economy", "Pentagon", "Capitol", "Immigration", "Voting", "Politics"
 ]
 
-# Translate short/possessive names into Wikipedia search terms
+# If these names appear anywhere in the headline, Wikipedia is searched for them FIRST.
+VIP_NAMES = [
+    "Trump", "Biden", "Harris", "Vance", "Obama", "Clinton", "Pelosi", 
+    "Schumer", "McConnell", "Putin", "Zelensky", "Musk", "Guilfoyle", "Rubio"
+]
+
 ALIASES = {
-    "trump": "Donald Trump", "trump's": "Donald Trump",
-    "biden": "Joe Biden", "biden's": "Joe Biden",
-    "harris": "Kamala Harris", "harris's": "Kamala Harris",
-    "vance": "JD Vance", "obama": "Barack Obama",
-    "putin": "Vladimir Putin", "zelensky": "Volodymyr Zelenskyy"
+    "trump": "Donald Trump", "biden": "Joe Biden", "harris": "Kamala Harris",
+    "vance": "JD Vance", "obama": "Barack Obama", "putin": "Vladimir Putin",
+    "zelensky": "Volodymyr Zelenskyy", "musk": "Elon Musk"
 }
 
 def _extract_entity(headline: str) -> str:
+    # 1. Check VIP list first
+    for name in VIP_NAMES:
+        if name.lower() in headline.lower():
+            return ALIASES.get(name.lower(), name)
+            
+    # 2. Fallback to longest capitalized phrase
     words = re.findall(r"\b[A-Z][a-zA-Z']+(?:\s+[A-Z][a-zA-Z']+)*\b", headline)
     if words:
-        entity = max(words, key=len).lower()
-        # Check if it's in our alias list (e.g., "Trump's" -> "Donald Trump")
-        for key, real_name in ALIASES.items():
-            if key in entity:
-                return real_name
-        return entity.title()
-    return headline.split()[0] if headline else ""
+        entity = max(words, key=len)
+        return ALIASES.get(entity.lower(), entity)
+    return "US Politics"
 
 def _extract_theme(headline: str) -> str:
     for theme in THEMES:

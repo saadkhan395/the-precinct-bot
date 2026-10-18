@@ -40,16 +40,15 @@ def download_and_process_bg(url):
             
         img = img.resize((W, H), Image.Resampling.LANCZOS)
         
-        # NEW: Stronger gradient starting from y=450 down to solid black
+        # Solid black box at the bottom, fade to black from the middle
         gradient = Image.new("L", (1, H))
         for y in range(H):
-            if y < 450:
-                gradient.putpixel((0, y), 0)
+            if y < 650:
+                gradient.putpixel((0, y), 0) # Clear at top
             elif y > 900:
-                gradient.putpixel((0, y), 255) # Solid black at the bottom
+                gradient.putpixel((0, y), 255) # Solid black at bottom
             else:
-                # Fade from 0 to 255 between y=450 and y=900
-                alpha = int(255 * ((y - 450) / 450))
+                alpha = int(255 * ((y - 650) / 250))
                 gradient.putpixel((0, y), alpha)
                 
         gradient = gradient.resize((W, H))
@@ -73,7 +72,7 @@ def wrap_centered(draw, text, f, max_w):
     if cur: lines.append(cur)
     return lines
 
-def fit_text_centered(draw, text, max_w, max_h, start=110, min_size=50):
+def fit_text_centered(draw, text, max_w, max_h, start=90, min_size=44):
     size = start
     while size >= min_size:
         f = font(size)
@@ -85,14 +84,10 @@ def fit_text_centered(draw, text, max_w, max_h, start=110, min_size=50):
     f = font(min_size)
     return f, wrap_centered(draw, text, f, max_w), int(min_size * 1.15)
 
-def draw_center(draw, text, f, y, color, stroke=False):
+def draw_center(draw, text, f, y, color):
     w = draw.textlength(text, font=f)
     x = (W - w) / 2
-    if stroke:
-        # Draw a subtle black outline for maximum readability
-        draw.text((x, y), text, font=f, fill=color, stroke_width=3, stroke_fill=(0, 0, 0))
-    else:
-        draw.text((x, y), text, font=f, fill=color)
+    draw.text((x, y), text, font=f, fill=color)
 
 def render_post(content_id, hook, headline, outlets, source_count, index, image_url=None):
     style = STYLES[index % len(STYLES)]
@@ -112,27 +107,24 @@ def render_post(content_id, hook, headline, outlets, source_count, index, image_
     draw.text((MARGIN, 90), "THE DAILY PRECINCT", font=font(34), fill=style["accent"])
     draw.rectangle([MARGIN, 145, MARGIN + 140, 151], fill=style["accent"])
 
-    # Calculate sizes
-    f, lines, line_h = fit_text_centered(draw, headline, max_w, 380, start=100, min_size=46)
-    total_text_h = len(lines) * line_h
+    # --- TEXT BLOCK (Anchored to the solid black bottom) ---
     
-    # Anchor the block so it ends at y=1050
-    start_y = 1050 - total_text_h 
+    # 1. The Hook (Red/Gold) placed at y=880
+    hook_font = font(40)
+    draw_center(draw, hook.upper(), hook_font, 880, style["accent"])
 
-    # Draw Hook (Above headline)
-    hook_font = font(44)
-    draw_center(draw, hook.upper(), hook_font, start_y - 75, style["accent"], stroke=True)
-
-    # Draw Headline
-    y = start_y
+    # 2. The Main Headline (White) placed starting at y=950
+    # Max height is 220px to guarantee it fits above the sources
+    f, lines, line_h = fit_text_centered(draw, headline, max_w, 220, start=88, min_size=42)
+    y = 950
     for line in lines:
-        draw_center(draw, line, f, y, style["text"], stroke=True)
+        draw_center(draw, line, f, y, style["text"])
         y += line_h
 
-    # Bottom Info (Inside the solid black area)
-    draw_center(draw, f"VERIFIED BY {source_count} OUTLETS", font(28), 1130, style["muted"])
-    draw_center(draw, f"Sources: {outlets}", font(26), 1175, style["muted"])
-    draw_center(draw, "@thedailyprecinct", font(30), 1260, style["accent"])
+    # 3. Bottom Info (Anchored to the very bottom)
+    draw_center(draw, f"VERIFIED BY {source_count} OUTLETS", font(28), 1180, style["muted"])
+    draw_center(draw, f"Sources: {outlets}", font(26), 1225, style["muted"])
+    draw_center(draw, "@thedailyprecinct", font(30), 1280, style["accent"])
 
     os.makedirs("output/images", exist_ok=True)
     path = f"output/images/{content_id}.jpg"

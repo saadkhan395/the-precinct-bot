@@ -1,4 +1,3 @@
-
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -74,7 +73,6 @@ def main():
     print(f"Story: {story['Headline']} ({outlets})")
     copy = write_copy(story["Headline"], outlets)
     
-    # Fetch the real image
     print("Fetching background image...")
     image_url = get_image_for_headline(story["Headline"])
     
@@ -82,8 +80,10 @@ def main():
         cid, copy["hook"], copy["headline"], outlets, int(story["Source Count"]), image_count, image_url
     )
 
+    # Build the full caption with the new paragraph structure
     caption = f"{copy['caption']}\n\n{copy['cta']}\n\nSources: {outlets}\n\n" + " ".join(copy["hashtags"])
     alt = f"News graphic from The Daily Precinct. Headline: {copy['headline']}. Reported by {outlets}."
+    
     values = {
         "Content ID": cid,
         "Content Type": "image",

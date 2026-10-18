@@ -1,4 +1,3 @@
-"""Fetch subject-relevant images from Wikipedia (faces) or Unsplash (themes)."""
 import os
 import re
 import requests
@@ -6,34 +5,28 @@ import requests
 WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 UNSPLASH_API = "https://api.unsplash.com"
 
-THEMES = [
-    "White House", "Senate", "Congress", "Supreme Court", "Border", 
-    "Election", "Economy", "Pentagon", "Capitol", "Immigration", "Voting", "Politics"
-]
-
-# If these names appear anywhere in the headline, Wikipedia is searched for them FIRST.
-VIP_NAMES = [
-    "Trump", "Biden", "Harris", "Vance", "Obama", "Clinton", "Pelosi", 
-    "Schumer", "McConnell", "Putin", "Zelensky", "Musk", "Guilfoyle", "Rubio"
-]
-
-ALIASES = {
+# If any of these names appear, we prioritize their Wikipedia portrait
+VIP_NAMES = {
     "trump": "Donald Trump", "biden": "Joe Biden", "harris": "Kamala Harris",
     "vance": "JD Vance", "obama": "Barack Obama", "putin": "Vladimir Putin",
-    "zelensky": "Volodymyr Zelenskyy", "musk": "Elon Musk"
+    "zelensky": "Volodymyr Zelenskyy", "musk": "Elon Musk", "guilfoyle": "Kimberly Guilfoyle"
 }
 
+THEMES = ["White House", "Senate", "Congress", "Supreme Court", "Border", "Election", "Economy", "Pentagon", "Capitol", "Immigration", "Voting"]
+
 def _extract_entity(headline: str) -> str:
-    # 1. Check VIP list first
-    for name in VIP_NAMES:
-        if name.lower() in headline.lower():
-            return ALIASES.get(name.lower(), name)
+    """Cleans possessives (Trump's -> Trump) and checks VIP list."""
+    clean_headline = re.sub(r"'s\b", "", headline) # Strip 's
+    
+    # Check VIP list first
+    for name, full_name in VIP_NAMES.items():
+        if re.search(rf"\b{name}\b", clean_headline, re.IGNORECASE):
+            return full_name
             
-    # 2. Fallback to longest capitalized phrase
-    words = re.findall(r"\b[A-Z][a-zA-Z']+(?:\s+[A-Z][a-zA-Z']+)*\b", headline)
+    # Fallback to longest capitalized phrase
+    words = re.findall(r"\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\b", clean_headline)
     if words:
-        entity = max(words, key=len)
-        return ALIASES.get(entity.lower(), entity)
+        return max(words, key=len)
     return "US Politics"
 
 def _extract_theme(headline: str) -> str:
@@ -45,7 +38,8 @@ def _extract_theme(headline: str) -> str:
 def fetch_wikipedia_image(entity: str) -> str | None:
     params = {
         "action": "query", "titles": entity,
-        "prop": "pageimages", "pithumbsize": 1200, "format": "json"
+        "prop": "pageimages", "piprop": "thumbnail|original", 
+        "pithumbsize": 1200, "format": "json"
     }
     try:
         r = requests.get(WIKIPEDIA_API, params=params, timeout=15)
@@ -54,15 +48,15 @@ def fetch_wikipedia_image(entity: str) -> str | None:
             for page in pages.values():
                 if "thumbnail" in page:
                     return page["thumbnail"]["source"]
+                elif "original" in page:
+                    return page["original"]["source"]
     except Exception as e:
         print(f"  Wikipedia fetch failed: {e}")
     return None
 
 def fetch_unsplash_image(query: str) -> str | None:
     access_key = os.environ.get("UNSPLASH_ACCESS_KEY", "")
-    if not access_key:
-        print("  [Unsplash] Error: UNSPLASH_ACCESS_KEY is not set.")
-        return None
+    if not access_key: return None
 
     headers = {"Authorization": f"Client-ID {access_key}"}
     params = {"query": query, "per_page": 1, "orientation": "portrait"}
@@ -71,9 +65,7 @@ def fetch_unsplash_image(query: str) -> str | None:
         if r.ok:
             results = r.json().get("results", [])
             if results:
-                photo = results[0]
-                requests.get(photo["links"]["download_location"], headers=headers, timeout=10)
-                return photo["urls"]["regular"]
+                return results[0]["urls"]["regular"]
     except Exception as e:
         print(f"  Unsplash fetch failed: {e}")
     return None

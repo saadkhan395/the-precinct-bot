@@ -6,11 +6,12 @@ from PIL import Image, ImageDraw, ImageFont
 W, H = 1080, 1350
 MARGIN = 90
 MAX_W = W - (MARGIN * 2)  # 900px maximum text width
+
 FONT_PATHS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf"]
 
 STYLES = [
-    {"name": "navy_gold", "accent": (201, 162, 39), "text": (255, 255, 255), "muted": (170, 180, 200)},
-    {"name": "dark_crimson", "accent": (214, 52, 62), "text": (255, 255, 255), "muted": (176, 176, 186)},
+    {"name": "navy_gold", "accent": (220, 40, 40), "text": (255, 255, 255), "muted": (180, 180, 180)}, # Red accent
+    {"name": "dark_crimson", "accent": (220, 40, 40), "text": (255, 255, 255), "muted": (180, 180, 180)},
 ]
 
 def font(size):
@@ -37,19 +38,14 @@ def download_and_process_bg(url):
             
         img = img.resize((W, H), Image.Resampling.LANCZOS)
         
-        # Premium Bottom Gradient
-        gradient = Image.new("L", (1, H))
-        for y in range(H):
-            if y < 650: gradient.putpixel((0, y), 0)
-            elif y > 900: gradient.putpixel((0, y), 255)
-            else: gradient.putpixel((0, y), int(255 * ((y - 650) / 250)))
-                
-        gradient = gradient.resize((W, H))
-        black_bg = Image.new("RGB", (W, H), (0, 0, 0))
-        return Image.composite(black_bg, img, gradient)
+        # Create the solid black box at the bottom (starting at y=850)
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([(0, 850), (W, H)], fill=(0, 0, 0))
+        
+        return img
     except Exception as e:
         print(f"Background image failed: {e}")
-        return None
+        return Image.new("RGB", (W, H), (0, 0, 0))
 
 def wrap_text(draw, text, f, max_w):
     lines, cur = [], ""
@@ -63,52 +59,44 @@ def wrap_text(draw, text, f, max_w):
     if cur: lines.append(cur)
     return lines
 
-def draw_center(draw, text, f, y, color, stroke_width=0):
+def draw_center(draw, text, f, y, color):
     w = draw.textlength(text, font=f)
     x = (W - w) / 2
-    if stroke_width > 0:
-        draw.text((x, y), text, font=f, fill=color, stroke_width=stroke_width, stroke_fill=(0,0,0))
-    else:
-        draw.text((x, y), text, font=f, fill=color)
+    draw.text((x, y), text, font=f, fill=color)
 
 def render_post(content_id, hook, headline, outlets, source_count, index, image_url=None):
     style = STYLES[index % len(STYLES)]
-    img = download_and_process_bg(image_url) if image_url else Image.new("RGB", (W, H), (10, 22, 48))
+    img = download_and_process_bg(image_url) if image_url else Image.new("RGB", (W, H), (0, 0, 0))
     draw = ImageDraw.Draw(img)
 
     # Top Branding
-    draw.text((MARGIN, 90), "THE DAILY PRECINCT", font=font(34), fill=style["accent"])
+    draw.text((MARGIN, 90), "THE DAILY PRECINCT", font=font(34), fill=(255, 255, 255))
     draw.rectangle([MARGIN, 145, MARGIN + 140, 151], fill=style["accent"])
 
     # --- MIXED TYPOGRAPHY HEADLINE ---
-    # Split headline into Kicker (first 4 words) and Rest (remaining words)
-    words = headline.split()
-    kicker_text = " ".join(words[:4]).upper()
-    rest_text = " ".join(words[4:])
+    # Start text higher inside the black box (y=880)
+    y_cursor = 880
 
-    y_cursor = 820
+    # 1. Hook (Red, large, exactly like the reference)
+    hook_font = font(62) 
+    hook_lines = wrap_text(draw, hook.upper(), hook_font, MAX_W)
+    for line in hook_lines:
+        draw_center(draw, line, hook_font, y_cursor, style["accent"])
+        y_cursor += int(hook_font.size * 1.1)
 
-    # 1. Draw Kicker (Large, Red, Outlined)
-    kicker_font = font(64) # Large font
-    # Wrap kicker if it's too wide
-    kicker_lines = wrap_text(draw, kicker_text, kicker_font, MAX_W)
-    for line in kicker_lines:
-        draw_center(draw, line, kicker_font, y_cursor, style["accent"], stroke_width=3)
-        y_cursor += int(kicker_font.size * 1.1)
-
-    # 2. Draw Rest of Headline (Smaller, White, Outlined)
-    if rest_text:
-        y_cursor += 10 # Add a little gap
-        head_font = font(52) # Smaller font
-        head_lines = wrap_text(draw, rest_text, head_font, MAX_W)
+    # 2. Headline (White, slightly smaller, no outlines)
+    if headline:
+        y_cursor += 15 # Add a gap
+        head_font = font(54) 
+        head_lines = wrap_text(draw, headline, head_font, MAX_W)
         for line in head_lines:
-            draw_center(draw, line, head_font, y_cursor, style["text"], stroke_width=2)
+            draw_center(draw, line, head_font, y_cursor, style["text"])
             y_cursor += int(head_font.size * 1.15)
 
     # Bottom Info (Anchored to the very bottom)
-    draw_center(draw, f"VERIFIED BY {source_count} OUTLETS", font(28), 1180, style["muted"])
-    draw_center(draw, f"Sources: {outlets}", font(26), 1225, style["muted"])
-    draw_center(draw, "@thedailyprecinct", font(30), 1280, style["accent"])
+    draw_center(draw, f"VERIFIED BY {source_count} OUTLETS", font(26), 1200, style["muted"])
+    draw_center(draw, f"Sources: {outlets}", font(24), 1240, style["muted"])
+    draw_center(draw, "@thedailyprecinct", font(28), 1290, style["text"])
 
     os.makedirs("output/images", exist_ok=True)
     path = f"output/images/{content_id}.jpg"

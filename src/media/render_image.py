@@ -5,14 +5,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1080, 1350
 MARGIN = 90
-MAX_W = W - (MARGIN * 2)  # 900px maximum text width
+MAX_W = W - (MARGIN * 2)
 
 FONT_PATHS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf"]
-
-STYLES = [
-    {"name": "navy_gold", "accent": (220, 40, 40), "text": (255, 255, 255), "muted": (180, 180, 180)}, # Red accent
-    {"name": "dark_crimson", "accent": (220, 40, 40), "text": (255, 255, 255), "muted": (180, 180, 180)},
-]
 
 def font(size):
     for p in FONT_PATHS:
@@ -38,10 +33,9 @@ def download_and_process_bg(url):
             
         img = img.resize((W, H), Image.Resampling.LANCZOS)
         
-        # Create the solid black box at the bottom (starting at y=850)
+        # Solid black box from y=800 down
         draw = ImageDraw.Draw(img)
-        draw.rectangle([(0, 850), (W, H)], fill=(0, 0, 0))
-        
+        draw.rectangle([(0, 800), (W, H)], fill=(0, 0, 0))
         return img
     except Exception as e:
         print(f"Background image failed: {e}")
@@ -59,46 +53,63 @@ def wrap_text(draw, text, f, max_w):
     if cur: lines.append(cur)
     return lines
 
-def draw_center(draw, text, f, y, color):
+def draw_center(draw, text, f, y, color, stroke=0):
     w = draw.textlength(text, font=f)
     x = (W - w) / 2
-    draw.text((x, y), text, font=f, fill=color)
+    if stroke > 0:
+        draw.text((x, y), text, font=f, fill=color, stroke_width=stroke, stroke_fill=(0,0,0))
+    else:
+        draw.text((x, y), text, font=f, fill=color)
 
 def render_post(content_id, hook, headline, outlets, source_count, index, image_url=None):
-    style = STYLES[index % len(STYLES)]
     img = download_and_process_bg(image_url) if image_url else Image.new("RGB", (W, H), (0, 0, 0))
     draw = ImageDraw.Draw(img)
 
     # Top Branding
     draw.text((MARGIN, 90), "THE DAILY PRECINCT", font=font(34), fill=(255, 255, 255))
-    draw.rectangle([MARGIN, 145, MARGIN + 140, 151], fill=style["accent"])
+    draw.rectangle([MARGIN, 145, MARGIN + 140, 151], fill=(220, 40, 40))
 
-    # --- MIXED TYPOGRAPHY HEADLINE ---
-    # Start text higher inside the black box (y=880)
-    y_cursor = 880
-
-    # 1. Hook (Red, large, exactly like the reference)
-    hook_font = font(62) 
+    # --- DYNAMIC LAYOUT ENGINE ---
+    hook_font = font(58)
+    head_font = font(48)
+    
     hook_lines = wrap_text(draw, hook.upper(), hook_font, MAX_W)
-    for line in hook_lines:
-        draw_center(draw, line, hook_font, y_cursor, style["accent"])
-        y_cursor += int(hook_font.size * 1.1)
+    head_lines = wrap_text(draw, headline, head_font, MAX_W)
+    
+    elements = []
+    # Red Hook
+    for l in hook_lines:
+        elements.append({"text": l, "font": hook_font, "color": (220, 40, 40), "stroke": 3, "h": int(hook_font.size * 1.15)})
+        
+    # Gap
+    if hook_lines and head_lines:
+        elements.append({"text": "", "font": head_font, "color": (0,0,0), "stroke": 0, "h": 20})
+        
+    # White Headline
+    for l in head_lines:
+        elements.append({"text": l, "font": head_font, "color": (255, 255, 255), "stroke": 2, "h": int(head_font.size * 1.15)})
 
-    # 2. Headline (White, slightly smaller, no outlines)
-    if headline:
-        y_cursor += 15 # Add a gap
-        head_font = font(54) 
-        head_lines = wrap_text(draw, headline, head_font, MAX_W)
-        for line in head_lines:
-            draw_center(draw, line, head_font, y_cursor, style["text"])
-            y_cursor += int(head_font.size * 1.15)
+    total_h = sum(e["h"] for e in elements)
+    
+    # Center the block mathematically inside the 800-1150 zone (350px high)
+    start_y = 800 + (350 - total_h) // 2
+    
+    y_cursor = start_y
+    for e in elements:
+        if e["text"]:
+            draw_center(draw, e["text"], e["font"], y_cursor, e["color"], e["stroke"])
+        y_cursor += e["h"]
 
-    # Bottom Info (Anchored to the very bottom)
-    draw_center(draw, f"VERIFIED BY {source_count} OUTLETS", font(26), 1200, style["muted"])
-    draw_center(draw, f"Sources: {outlets}", font(24), 1240, style["muted"])
-    draw_center(draw, "@thedailyprecinct", font(28), 1290, style["text"])
+    # Bottom Info (Anchored safely below the text block)
+    draw_center(draw, f"VERIFIED BY {source_count} OUTLETS", font(26), 1180, (170, 170, 170))
+    draw_center(draw, f"Sources: {outlets}", font(24), 1225, (170, 170, 170))
+    draw_center(draw, "@thedailyprecinct", font(28), 1280, (220, 40, 40))
 
     os.makedirs("output/images", exist_ok=True)
     path = f"output/images/{content_id}.jpg"
     img.save(path, "JPEG", quality=92)
-    return path, style["name"]
+    return path, "editorial"
+
+def render_carousel(cid, copy, outlets, source_count, index):
+    # Placeholder to avoid import errors in make_carousel_post.py if called
+    return [], "editorial"

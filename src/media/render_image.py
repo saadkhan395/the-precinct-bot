@@ -22,13 +22,11 @@ def font(size):
     raise RuntimeError("No bold font found")
 
 def download_and_process_bg(url):
-    """Downloads image, crops to 1080x1350, adds bottom gradient for text."""
     try:
         resp = requests.get(url, timeout=20)
         resp.raise_for_status()
         img = Image.open(io.BytesIO(resp.content)).convert("RGB")
         
-        # Crop to exact aspect ratio
         target_ratio = W / H
         img_ratio = img.width / img.height
         if img_ratio > target_ratio:
@@ -42,15 +40,17 @@ def download_and_process_bg(url):
             
         img = img.resize((W, H), Image.Resampling.LANCZOS)
         
-        # Add bottom gradient (dark shadow at the bottom for text readability)
+        # NEW: Stronger gradient starting from y=450 down to solid black
         gradient = Image.new("L", (1, H))
         for y in range(H):
-            if y < 700:
-                gradient.putpixel((0, y), 0) # Clear at top
+            if y < 450:
+                gradient.putpixel((0, y), 0)
+            elif y > 900:
+                gradient.putpixel((0, y), 255) # Solid black at the bottom
             else:
-                # Fade to black towards the bottom
-                alpha = int(255 * ((y - 700) / (H - 700)))
-                gradient.putpixel((0, y), min(alpha, 240))
+                # Fade from 0 to 255 between y=450 and y=900
+                alpha = int(255 * ((y - 450) / 450))
+                gradient.putpixel((0, y), alpha)
                 
         gradient = gradient.resize((W, H))
         black_bg = Image.new("RGB", (W, H), (0, 0, 0))
@@ -73,7 +73,7 @@ def wrap_centered(draw, text, f, max_w):
     if cur: lines.append(cur)
     return lines
 
-def fit_text_centered(draw, text, max_w, max_h, start=120, min_size=50):
+def fit_text_centered(draw, text, max_w, max_h, start=110, min_size=50):
     size = start
     while size >= min_size:
         f = font(size)
@@ -85,10 +85,14 @@ def fit_text_centered(draw, text, max_w, max_h, start=120, min_size=50):
     f = font(min_size)
     return f, wrap_centered(draw, text, f, max_w), int(min_size * 1.15)
 
-def draw_center(draw, text, f, y, color):
+def draw_center(draw, text, f, y, color, stroke=False):
     w = draw.textlength(text, font=f)
     x = (W - w) / 2
-    draw.text((x, y), text, font=f, fill=color)
+    if stroke:
+        # Draw a subtle black outline for maximum readability
+        draw.text((x, y), text, font=f, fill=color, stroke_width=3, stroke_fill=(0, 0, 0))
+    else:
+        draw.text((x, y), text, font=f, fill=color)
 
 def render_post(content_id, hook, headline, outlets, source_count, index, image_url=None):
     style = STYLES[index % len(STYLES)]
@@ -108,29 +112,27 @@ def render_post(content_id, hook, headline, outlets, source_count, index, image_
     draw.text((MARGIN, 90), "THE DAILY PRECINCT", font=font(34), fill=style["accent"])
     draw.rectangle([MARGIN, 145, MARGIN + 140, 151], fill=style["accent"])
 
-    # Bottom Text Block (Headline)
-    # Calculate available height for headline (from y=750 to y=1150)
-    f, lines, line_h = fit_text_centered(draw, headline, max_w, 400, start=110, min_size=50)
-    
+    # Calculate sizes
+    f, lines, line_h = fit_text_centered(draw, headline, max_w, 380, start=100, min_size=46)
     total_text_h = len(lines) * line_h
-    start_y = 1100 - total_text_h # Anchor it near the bottom
+    
+    # Anchor the block so it ends at y=1050
+    start_y = 1050 - total_text_h 
 
-    # Draw the Hook (Highlighted above headline)
-    hook_font = font(48)
-    draw_center(draw, hook.upper(), hook_font, start_y - 80, style["accent"])
+    # Draw Hook (Above headline)
+    hook_font = font(44)
+    draw_center(draw, hook.upper(), hook_font, start_y - 75, style["accent"], stroke=True)
 
-    # Draw the massive headline
+    # Draw Headline
     y = start_y
     for line in lines:
-        draw_center(draw, line, f, y, style["text"])
+        draw_center(draw, line, f, y, style["text"], stroke=True)
         y += line_h
 
-    # Bottom Info (Sources)
-    draw_center(draw, f"VERIFIED BY {source_count} OUTLETS", font(28), 1180, style["muted"])
-    draw_center(draw, f"Sources: {outlets}", font(26), 1225, style["muted"])
-    
-    # Watermark
-    draw_center(draw, "@thedailyprecinct", font(30), 1280, style["accent"])
+    # Bottom Info (Inside the solid black area)
+    draw_center(draw, f"VERIFIED BY {source_count} OUTLETS", font(28), 1130, style["muted"])
+    draw_center(draw, f"Sources: {outlets}", font(26), 1175, style["muted"])
+    draw_center(draw, "@thedailyprecinct", font(30), 1260, style["accent"])
 
     os.makedirs("output/images", exist_ok=True)
     path = f"output/images/{content_id}.jpg"

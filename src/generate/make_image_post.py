@@ -1,3 +1,4 @@
+
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -6,36 +7,21 @@ import gspread
 
 from generate.groq_client import write_copy
 from media.render_image import render_post
+from media.fetch_image import get_image_for_headline
 from research.fetch_news import load_yaml
 
 CONTENT_HEADERS = [
-    "Content ID",
-    "Content Type",
-    "Topic",
-    "Source",
-    "Source URL",
-    "Source Publication Date",
-    "Research Date",
-    "Creation Date",
-    "Status",
-    "Scheduled Time",
-    "Published Time",
-    "Facebook Post ID",
-    "Instagram Media ID",
-    "Caption",
-    "Alt Text",
-    "Creative Format",
-    "Competitor Inspiration Category",
-    "Validation Result",
-    "Error Message",
+    "Content ID", "Content Type", "Topic", "Source", "Source URL", 
+    "Source Publication Date", "Research Date", "Creation Date", "Status", 
+    "Scheduled Time", "Published Time", "Facebook Post ID", "Instagram Media ID", 
+    "Caption", "Alt Text", "Creative Format", "Competitor Inspiration Category", 
+    "Validation Result", "Error Message",
 ]
-
 
 def connect():
     info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
     gc = gspread.service_account_from_dict(info)
     return gc.open_by_key(os.environ["GOOGLE_SHEET_ID"])
-
 
 def get_content_ws(sh):
     try:
@@ -45,7 +31,6 @@ def get_content_ws(sh):
     if not ws.row_values(1):
         ws.append_row(CONTENT_HEADERS)
     return ws
-
 
 def pick_story(research_ws, used_ids, max_age_hours):
     now = datetime.now(timezone.utc)
@@ -63,7 +48,6 @@ def pick_story(research_ws, used_ids, max_age_hours):
             continue
         return r, cid
     return None, None
-
 
 def main():
     settings = load_yaml("config/settings.yaml") or {}
@@ -89,18 +73,17 @@ def main():
     outlets = story["Outlets"]
     print(f"Story: {story['Headline']} ({outlets})")
     copy = write_copy(story["Headline"], outlets)
+    
+    # Fetch the real image
+    print("Fetching background image...")
+    image_url = get_image_for_headline(story["Headline"])
+    
     path, style = render_post(
-        cid, copy["hook"], copy["headline"], outlets, int(story["Source Count"]), image_count
+        cid, copy["hook"], copy["headline"], outlets, int(story["Source Count"]), image_count, image_url
     )
 
-    caption = (
-        f"{copy['caption']}\n\n{copy['cta']}\n\nSources: {outlets}\n\n"
-        + " ".join(copy["hashtags"])
-    )
-    alt = (
-        f"News graphic from The Daily Precinct. Headline: {copy['headline']}. "
-        f"Reported by {outlets}."
-    )
+    caption = f"{copy['caption']}\n\n{copy['cta']}\n\nSources: {outlets}\n\n" + " ".join(copy["hashtags"])
+    alt = f"News graphic from The Daily Precinct. Headline: {copy['headline']}. Reported by {outlets}."
     values = {
         "Content ID": cid,
         "Content Type": "image",
@@ -114,16 +97,12 @@ def main():
         "Caption": caption,
         "Alt Text": alt,
         "Creative Format": style,
-        "Validation Result": "pending (Step 11)",
+        "Validation Result": "pending",
     }
-    content_ws.append_row(
-        [values.get(h, "") for h in headers], value_input_option="RAW"
-    )
+    content_ws.append_row([values.get(h, "") for h in headers], value_input_option="RAW")
+    
     print(f"Image saved: {path} (style: {style})")
-    print(f"Hook: {copy['hook']}")
-    print(f"Headline: {copy['headline']}")
     print("IMAGE POST OK")
-
 
 if __name__ == "__main__":
     main()

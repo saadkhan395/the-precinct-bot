@@ -1,34 +1,9 @@
 import os
 import re
 import requests
-import json
 
-WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 UNSPLASH_API = "https://api.unsplash.com"
-
-# High-priority entities
-VIP_NAMES = {
-    "trump": "Donald Trump", "biden": "Joe Biden", "harris": "Kamala Harris",
-    "vance": "JD Vance", "obama": "Barack Obama", "putin": "Vladimir Putin",
-    "zelensky": "Volodymyr Zelenskyy", "musk": "Elon Musk"
-}
-
 THEMES = ["White House", "Senate", "Congress", "Supreme Court", "Border", "Election", "Economy", "Pentagon", "Capitol", "Immigration", "Voting"]
-
-def _extract_entity(headline: str) -> str:
-    # Strip possessives (e.g., "Trump's" -> "Trump")
-    clean_headline = re.sub(r"'s\b", "", headline)
-    
-    # Check VIP list first
-    for name, full_name in VIP_NAMES.items():
-        if re.search(rf"\b{name}\b", clean_headline, re.IGNORECASE):
-            return full_name
-            
-    # Fallback to longest capitalized phrase (e.g., "Christa Pike")
-    words = re.findall(r"\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\b", clean_headline)
-    if words:
-        return max(words, key=len)
-    return "US Politics"
 
 def _extract_theme(headline: str) -> str:
     for theme in THEMES:
@@ -36,24 +11,29 @@ def _extract_theme(headline: str) -> str:
             return theme
     return "US Politics"
 
-def fetch_wikipedia_image(entity: str) -> str | None:
-    """Fetch the main portrait from Wikipedia using formatversion=2."""
-    params = {
-        "action": "query",
-        "format": "json",
-        "formatversion": 2,
-        "prop": "pageimages|pageterms",
-        "piprop": "original",
-        "titles": entity
-    }
+def fetch_news_image(source_urls: str) -> str | None:
+    """Extract the og:image (main image) directly from the news article."""
+    # The Source URLs are formatted as "Outlet: https://..."
+    urls = re.findall(r"https://[^\s]+", source_urls)
+    if not urls:
+        return None
+
+    url = urls[0] # Try the first source
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    
     try:
-        r = requests.get(WIKIPEDIA_API, params=params, timeout=15)
+        print(f"  Fetching article HTML from: {url[:50]}...")
+        r = requests.get(url, headers=headers, timeout=15)
         if r.ok:
-            pages = r.json().get("query", {}).get("pages", [])
-            if pages and "original" in pages[0]:
-                return pages[0]["original"]["source"]
+            # Look for the Open Graph image tag
+            match = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\']([^"\']+)["\']', r.text)
+            if match:
+                img_url = match.group(1)
+                print(f"  Found OG Image: {img_url[:60]}...")
+                return img_url
     except Exception as e:
-        print(f"  Wikipedia fetch failed: {e}")
+        print(f"  Failed to parse article image: {e}")
+    
     return None
 
 def fetch_unsplash_image(query: str) -> str | None:
@@ -72,19 +52,17 @@ def fetch_unsplash_image(query: str) -> str | None:
         print(f"  Unsplash fetch failed: {e}")
     return None
 
-def get_image_for_headline(headline: str) -> str | None:
-    entity = _extract_entity(headline)
-    theme = _extract_theme(headline)
-    print(f"Looking for image. Entity: '{entity}', Theme: '{theme}'")
-
-    url = fetch_wikipedia_image(entity)
+def get_image_for_headline(headline: str, source_urls: str) -> str | None:
+    """Try to get the real news image first, fallback to thematic stock photo."""
+    print("Looking for real news image...")
+    url = fetch_news_image(source_urls)
     if url:
-        print(f"  Found on Wikipedia: {url[:60]}...")
         return url
 
+    theme = _extract_theme(headline)
+    print(f"Fallback to Unsplash theme: '{theme}'")
     url = fetch_unsplash_image(theme)
     if url:
-        print(f"  Found on Unsplash for '{theme}': {url[:60]}...")
         return url
 
     print("  No image found.")

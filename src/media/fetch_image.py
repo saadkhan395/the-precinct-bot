@@ -1,29 +1,30 @@
 import os
 import re
 import requests
+import json
 
 WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 UNSPLASH_API = "https://api.unsplash.com"
 
-# If any of these names appear, we prioritize their Wikipedia portrait
+# High-priority entities
 VIP_NAMES = {
     "trump": "Donald Trump", "biden": "Joe Biden", "harris": "Kamala Harris",
     "vance": "JD Vance", "obama": "Barack Obama", "putin": "Vladimir Putin",
-    "zelensky": "Volodymyr Zelenskyy", "musk": "Elon Musk", "guilfoyle": "Kimberly Guilfoyle"
+    "zelensky": "Volodymyr Zelenskyy", "musk": "Elon Musk"
 }
 
 THEMES = ["White House", "Senate", "Congress", "Supreme Court", "Border", "Election", "Economy", "Pentagon", "Capitol", "Immigration", "Voting"]
 
 def _extract_entity(headline: str) -> str:
-    """Cleans possessives (Trump's -> Trump) and checks VIP list."""
-    clean_headline = re.sub(r"'s\b", "", headline) # Strip 's
+    # Strip possessives (e.g., "Trump's" -> "Trump")
+    clean_headline = re.sub(r"'s\b", "", headline)
     
     # Check VIP list first
     for name, full_name in VIP_NAMES.items():
         if re.search(rf"\b{name}\b", clean_headline, re.IGNORECASE):
             return full_name
             
-    # Fallback to longest capitalized phrase
+    # Fallback to longest capitalized phrase (e.g., "Christa Pike")
     words = re.findall(r"\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\b", clean_headline)
     if words:
         return max(words, key=len)
@@ -36,20 +37,21 @@ def _extract_theme(headline: str) -> str:
     return "US Politics"
 
 def fetch_wikipedia_image(entity: str) -> str | None:
+    """Fetch the main portrait from Wikipedia using formatversion=2."""
     params = {
-        "action": "query", "titles": entity,
-        "prop": "pageimages", "piprop": "thumbnail|original", 
-        "pithumbsize": 1200, "format": "json"
+        "action": "query",
+        "format": "json",
+        "formatversion": 2,
+        "prop": "pageimages|pageterms",
+        "piprop": "original",
+        "titles": entity
     }
     try:
         r = requests.get(WIKIPEDIA_API, params=params, timeout=15)
         if r.ok:
-            pages = r.json().get("query", {}).get("pages", {})
-            for page in pages.values():
-                if "thumbnail" in page:
-                    return page["thumbnail"]["source"]
-                elif "original" in page:
-                    return page["original"]["source"]
+            pages = r.json().get("query", {}).get("pages", [])
+            if pages and "original" in pages[0]:
+                return pages[0]["original"]["source"]
     except Exception as e:
         print(f"  Wikipedia fetch failed: {e}")
     return None

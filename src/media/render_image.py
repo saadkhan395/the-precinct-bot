@@ -1,11 +1,12 @@
 import io
 import os
 import requests
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 W, H = 1080, 1350
 MARGIN = 90
 MAX_W = W - (MARGIN * 2)
+BOX_TOP = 800 # Where the frosted glass starts
 
 FONT_PATHS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf"]
 
@@ -20,6 +21,7 @@ def download_and_process_bg(url):
         resp.raise_for_status()
         img = Image.open(io.BytesIO(resp.content)).convert("RGB")
         
+        # Crop to exact 1080x1350
         target_ratio = W / H
         img_ratio = img.width / img.height
         if img_ratio > target_ratio:
@@ -33,9 +35,20 @@ def download_and_process_bg(url):
             
         img = img.resize((W, H), Image.Resampling.LANCZOS)
         
-        # Solid black box from y=800 down
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([(0, 800), (W, H)], fill=(0, 0, 0))
+        # --- FROSTED GLASS EFFECT ---
+        # 1. Crop the bottom section
+        bottom_box = img.crop((0, BOX_TOP, W, H))
+        # 2. Apply heavy blur
+        blurred = bottom_box.filter(ImageFilter.GaussianBlur(radius=20))
+        # 3. Paste it back
+        img.paste(blurred, (0, BOX_TOP))
+        
+        # 4. Add a dark semi-transparent overlay to ensure text readability
+        overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        draw_overlay = ImageDraw.Draw(overlay)
+        draw_overlay.rectangle([(0, BOX_TOP), (W, H)], fill=(0, 0, 0, 150))
+        
+        img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
         return img
     except Exception as e:
         print(f"Background image failed: {e}")
@@ -91,8 +104,8 @@ def render_post(content_id, hook, headline, outlets, source_count, index, image_
 
     total_h = sum(e["h"] for e in elements)
     
-    # Center the block mathematically inside the 800-1150 zone (350px high)
-    start_y = 800 + (350 - total_h) // 2
+    # Center the block mathematically inside the frosted glass area (800-1150)
+    start_y = BOX_TOP + (350 - total_h) // 2
     
     y_cursor = start_y
     for e in elements:
@@ -101,8 +114,8 @@ def render_post(content_id, hook, headline, outlets, source_count, index, image_
         y_cursor += e["h"]
 
     # Bottom Info (Anchored safely below the text block)
-    draw_center(draw, f"VERIFIED BY {source_count} OUTLETS", font(26), 1180, (170, 170, 170))
-    draw_center(draw, f"Sources: {outlets}", font(24), 1225, (170, 170, 170))
+    draw_center(draw, f"VERIFIED BY {source_count} OUTLETS", font(26), 1180, (220, 220, 220))
+    draw_center(draw, f"Sources: {outlets}", font(24), 1225, (220, 220, 220))
     draw_center(draw, "@thedailyprecinct", font(28), 1280, (220, 40, 40))
 
     os.makedirs("output/images", exist_ok=True)
@@ -111,5 +124,4 @@ def render_post(content_id, hook, headline, outlets, source_count, index, image_
     return path, "editorial"
 
 def render_carousel(cid, copy, outlets, source_count, index):
-    # Placeholder to avoid import errors in make_carousel_post.py if called
     return [], "editorial"

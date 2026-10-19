@@ -9,11 +9,11 @@ from generate.make_image_post import connect, get_content_ws
 from generate.story_text import get_story_text
 from media.build_video import build_video, probe
 from media.render_reel import render_scenes
+from media.fetch_image import get_image_for_headline
 from research.fetch_news import load_yaml
 
 MIN_SECONDS = 3
 MAX_SECONDS = 90
-
 
 def main():
     settings = load_yaml("config/settings.yaml") or {}
@@ -52,10 +52,16 @@ def main():
 
     cid = "REEL-" + str(story["Cluster ID"])
     outlets = story["Outlets"]
+    source_count = int(story["Source Count"])
+    source_urls = story["Source URLs"]
     print(f"Story: {story['Headline']} ({outlets})")
 
+    # FETCH REAL IMAGE FOR THE VIDEO
+    print("Fetching real image for Reel...")
+    image_url = get_image_for_headline(story["Headline"], source_urls)
+
     scenes, style, pace, folder = render_scenes(
-        cid, copy, outlets, int(story["Source Count"]), reel_count
+        cid, copy, outlets, source_count, reel_count, image_url
     )
     final = f"output/reels/{cid}.mp4"
     build_video(scenes, folder, final)
@@ -72,16 +78,14 @@ def main():
         f"{copy['caption']}\n\n{copy['cta']}\n\nSources: {outlets}\n\n"
         + " ".join(copy["hashtags"])
     )
-    description = (
-        f"Vertical news video from The Daily Precinct. {copy['cover_headline']}. "
-        f"Reported by {outlets}."
-    )
+    description = f"Vertical news video from The Daily Precinct. {copy['cover_headline']}. Reported by {outlets}."
+    
     values = {
         "Content ID": cid,
         "Content Type": "reel",
         "Topic": story["Headline"],
         "Source": outlets,
-        "Source URL": story["Source URLs"],
+        "Source URL": source_urls,
         "Source Publication Date": story["Earliest Published (UTC)"],
         "Research Date": story["Research Timestamp (UTC)"],
         "Creation Date": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -89,15 +93,11 @@ def main():
         "Caption": caption,
         "Alt Text": description,
         "Creative Format": f"{style}; {pace} pacing; {duration:.0f}s",
-        "Validation Result": "pending (Step 11)",
+        "Validation Result": "pending",
     }
-    content_ws.append_row(
-        [values.get(h, "") for h in headers], value_input_option="RAW"
-    )
+    content_ws.append_row([values.get(h, "") for h in headers], value_input_option="RAW")
     print(f"Video saved: {final} ({duration:.1f}s, {width}x{height}, {style}, {pace} pacing)")
-    print(f"Cover headline: {copy['cover_headline']}")
     print("REEL OK")
-
 
 if __name__ == "__main__":
     main()

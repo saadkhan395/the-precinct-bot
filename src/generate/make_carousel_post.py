@@ -55,16 +55,24 @@ def main():
         if len(text) < 80:
             print(f"Skipping (not enough source text): {r['Headline']}")
             continue
-        story = r
-        copy = write_carousel(r["Headline"], r["Outlets"], text)
-        break
+        
+        try:
+            print(f"Generating copy for: {r['Headline']}...")
+            copy = write_carousel(r["Headline"], r["Outlets"], text)
+            story = r
+            break
+        except Exception as e:
+            print(f"Skipping story due to AI safety block: {e}")
+            continue
+
     if not story:
-        print("No suitable fresh verified story. Run 'Research News' first.")
+        print("No suitable fresh verified story passed AI safety checks.")
         return
 
     cid = "CAR-" + str(story["Cluster ID"])
     outlets = story["Outlets"]
-    print(f"Story: {story['Headline']} ({outlets})")
+    print(f"Story selected: {story['Headline']} ({outlets})")
+    
     paths, style = render_carousel(
         cid, copy, outlets, int(story["Source Count"]), carousel_count
     )
@@ -92,13 +100,12 @@ def main():
         "Caption": caption,
         "Alt Text": " | ".join(alts),
         "Creative Format": f"{style}; {len(paths)} slides",
-        "Validation Result": "pending (Step 11)",
+        "Validation Result": "pending",
     }
     content_ws.append_row(
         [values.get(h, "") for h in headers], value_input_option="RAW"
     )
     print(f"Slides saved: {len(paths)} in output/carousels/{cid} (style: {style})")
-    print(f"Cover headline: {copy['cover_headline']}")
     print("CAROUSEL OK")
 
 

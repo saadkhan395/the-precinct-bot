@@ -38,23 +38,31 @@ def main():
             used.add("IMG-" + i[5:])
 
     story, copy = None, None
+    # Loop through candidates and skip any that fail AI safety checks
     for r in candidates(research_ws, used, max_age)[:5]:
         text = get_story_text(r["Source URLs"], feeds)
         if len(text) < 80:
             print(f"Skipping (not enough source text): {r['Headline']}")
             continue
-        story = r
-        copy = write_carousel(r["Headline"], r["Outlets"], text)
-        break
+        
+        try:
+            print(f"Generating copy for: {r['Headline']}...")
+            copy = write_carousel(r["Headline"], r["Outlets"], text)
+            story = r
+            break # Success! Break out of the loop.
+        except Exception as e:
+            print(f"Skipping story due to AI safety block: {e}")
+            continue # Move to the next candidate
+
     if not story:
-        print("No suitable fresh verified story. Run 'Research News' first.")
+        print("No suitable fresh verified story passed AI safety checks. Run 'Research News' first or wait for new stories.")
         return
 
     cid = "REEL-" + str(story["Cluster ID"])
     outlets = story["Outlets"]
     source_count = int(story["Source Count"])
     source_urls = story["Source URLs"]
-    print(f"Story: {story['Headline']} ({outlets})")
+    print(f"Story selected: {story['Headline']} ({outlets})")
 
     # FETCH REAL IMAGE FOR THE VIDEO
     print("Fetching real image for Reel...")

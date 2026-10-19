@@ -1,60 +1,111 @@
 import os
-
-from PIL import Image, ImageDraw
-
-from media.render_image import MARGIN, STYLES, fit_text, font
+import requests
+import io
+from PIL import Image, ImageDraw, ImageFont
 
 RW, RH = 1080, 1920
-TOP_SAFE = 220
-BOTTOM_SAFE = 1600
+MARGIN = 90
+MAX_W = RW - (MARGIN * 2)
+BOX_TOP = 1250 # Where the black box starts on vertical video
+
+FONT_PATHS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf"]
 
 PACING = [
     {"name": "quick", "hook": 2.5, "headline": 4.0, "fact": 3.5, "sources": 3.0, "cta": 3.0},
     {"name": "standard", "hook": 3.0, "headline": 5.0, "fact": 4.5, "sources": 3.5, "cta": 3.5},
 ]
 
+def font(size):
+    for p in FONT_PATHS:
+        if os.path.exists(p): return ImageFont.truetype(p, size)
+    return ImageFont.load_default()
 
-def gradient_tall(top, bottom):
-    img = Image.new("RGB", (RW, RH), top)
-    d = ImageDraw.Draw(img)
-    for y in range(RH):
-        t = y / (RH - 1)
-        c = tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3))
-        d.line([(0, y), (RW, y)], fill=c)
-    return img
+def download_vertical_bg(url):
+    """Downloads image and crops to 1080x1920 with solid black bottom."""
+    try:
+        resp = requests.get(url, timeout=20)
+        resp.raise_for_status()
+        img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+        
+        target_ratio = RW / RH
+        img_ratio = img.width / img.height
+        if img_ratio > target_ratio:
+            new_width = int(target_ratio * img.height)
+            left = (img.width - new_width) // 2
+            img = img.crop((left, 0, left + new_width, img.height))
+        else:
+            new_height = int(img.width / target_ratio)
+            top = (img.height - new_height) // 2
+            img = img.crop((0, top, img.width, top + new_height))
+            
+        img = img.resize((RW, RH), Image.Resampling.LANCZOS)
+        
+        # Solid black box at the bottom
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([(0, BOX_TOP), (RW, RH)], fill=(0, 0, 0))
+        return img
+    except Exception as e:
+        print(f"Reel image failed: {e}")
+        return Image.new("RGB", (RW, RH), (10, 10, 10))
 
+def wrap_text(draw, text, f, max_w):
+    lines, cur = [], ""
+    for word in text.split():
+        trial = (cur + " " + word).strip()
+        if draw.textlength(trial, font=f) <= max_w:
+            cur = trial
+        else:
+            if cur: lines.append(cur)
+            cur = word
+    if cur: lines.append(cur)
+    return lines
 
-def new_frame(style):
-    img = gradient_tall(style["top"], style["bottom"])
+def draw_center(draw, text, f, y, color, stroke=0):
+    w = draw.textlength(text, font=f)
+    x = (RW - w) / 2
+    if stroke > 0:
+        draw.text((x, y), text, font=f, fill=color, stroke_width=stroke, stroke_fill=(0,0,0))
+    else:
+        draw.text((x, y), text, font=f, fill=color)
+
+def base_frame(image_url=None):
+    """Creates the base vertical frame with the image and black box."""
+    if image_url:
+        img = download_vertical_bg(image_url)
+    else:
+        img = Image.new("RGB", (RW, RH), (10, 10, 10))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([(0, BOX_TOP), (RW, RH)], fill=(0, 0, 0))
+        
     draw = ImageDraw.Draw(img)
-    draw.text((MARGIN, 110), "THE DAILY PRECINCT", font=font(38), fill=style["accent"])
-    draw.rectangle([MARGIN, 165, MARGIN + 150, 172], fill=style["accent"])
+    # Top Branding
+    draw.text((MARGIN, 120), "THE DAILY PRECINCT", font=font(40), fill=(255, 255, 255))
+    draw.rectangle([MARGIN, 180, MARGIN + 150, 188], fill=(220, 40, 40))
     return img, draw
 
+def draw_premium_text(draw, hook, headline, source_count, outlets):
+    """Draws the premium red/white text inside the black box."""
+    y_cursor = BOX_TOP + 60
+    
+    # Red Hook
+    hook_font = font(64)
+    for line in wrap_text(draw, hook.upper(), hook_font, MAX_W):
+        draw_center(draw, line, hook_font, y_cursor, (220, 40, 40), stroke=3)
+        y_cursor += int(hook_font.size * 1.15)
+        
+    y_cursor += 20 # Gap
+    
+    # White Headline
+    head_font = font(52)
+    for line in wrap_text(draw, headline, head_font, MAX_W):
+        draw_center(draw, line, head_font, y_cursor, (255, 255, 255), stroke=2)
+        y_cursor += int(head_font.size * 1.15)
+        
+    # Footer
+    draw_center(draw, f"VERIFIED BY {source_count} OUTLETS", font(30), 1760, (180, 180, 180))
+    draw_center(draw, f"Sources: {outlets}", font(28), 1810, (180, 180, 180))
 
-def put_lines(draw, lines, f, y, color, align, line_h):
-    for line in lines:
-        w = draw.textlength(line, font=f)
-        x = MARGIN if align == "left" else (RW - w) / 2
-        draw.text((x, y), line, font=f, fill=color)
-        y += line_h
-    return y
-
-
-def center_block(draw, text, style, start, min_size, label=None):
-    max_w = RW - 2 * MARGIN
-    f, lines, lh = fit_text(draw, text, max_w, 900, start=start, min_size=min_size)
-    label_h = 90 if label else 0
-    block_h = len(lines) * lh + label_h
-    y = max(TOP_SAFE + 80, (TOP_SAFE + BOTTOM_SAFE - block_h) // 2)
-    if label:
-        put_lines(draw, [label], font(46), y, style["accent"], style["align"], 60)
-        y += label_h
-    return put_lines(draw, lines, f, y, style["text"], style["align"], lh)
-
-
-def render_scenes(cid, copy, outlets, source_count, index):
-    style = STYLES[index % len(STYLES)]
+def render_scenes(cid, copy, outlets, source_count, index, image_url=None):
     pace = PACING[index % len(PACING)]
     folder = f"output/reels/{cid}_frames"
     os.makedirs(folder, exist_ok=True)
@@ -65,34 +116,21 @@ def render_scenes(cid, copy, outlets, source_count, index):
         img.save(p, "PNG")
         scenes.append((p, seconds))
 
-    img, draw = new_frame(style)
-    center_block(draw, copy["hook"].upper(), style, 120, 70)
-    save(img, "s01_hook", pace["hook"])
+    # Scene 1: Hook & Headline (Premium Layout)
+    img, draw = base_frame(image_url)
+    draw_premium_text(draw, copy["hook"], copy["cover_headline"], source_count, outlets)
+    save(img, "s01_premium", pace["hook"] + pace["headline"])
 
-    img, draw = new_frame(style)
-    center_block(draw, copy["cover_headline"], style, 100, 56)
-    save(img, "s02_headline", pace["headline"])
-
-    n = 3
+    # Scene 2: Facts (Overlay text on the image)
+    n = 2
     for s in copy["slides"]:
         for point in s["points"]:
-            if n > 6:
+            if n > 5:
                 break
-            img, draw = new_frame(style)
-            center_block(draw, point, style, 76, 46, label=s["title"].upper())
+            img, draw = base_frame(image_url)
+            # Re-use the premium text drawer for facts
+            draw_premium_text(draw, s["title"], point, source_count, outlets)
             save(img, f"s{n:02d}_fact", pace["fact"])
             n += 1
 
-    img, draw = new_frame(style)
-    names = [o.strip() for o in outlets.split(",") if o.strip()][:7]
-    text = f"VERIFIED BY {source_count} OUTLETS"
-    y = center_block(draw, text, style, 64, 48)
-    y += 30
-    put_lines(draw, names, font(44), y, style["muted"], style["align"], 60)
-    save(img, f"s{n:02d}_sources", pace["sources"])
-    n += 1
-
-    img, draw = new_frame(style)
-    center_block(draw, copy["cta"], style, 72, 46, label="FOLLOW @THEDAILYPRECINCT")
-    save(img, f"s{n:02d}_cta", pace["cta"])
-    return scenes, style["name"], pace["name"], folder
+    return scenes, "editorial", pace["name"], folder

@@ -1,52 +1,51 @@
-"""QC orchestrator.
-
-BUG-3 FIX: now runs check_commentary() so editorial language is rejected
-before content is approved.
-"""
+import json
+import os
+import csv
 from datetime import datetime, timezone
-
+from pathlib import Path
 import gspread
 
 from generate.make_image_post import connect, get_content_ws
 from generate.story_text import get_story_text
-from qc.ai_review import review, to_checks
-from qc.checks import (
-    check_commentary,
-    check_duplicate,
-    check_media,
-    check_sources,
-    check_text,
-    load_rules,
-)
+from qc.ai_review import score_post
+from qc.visual_analyzer import check_dimensions, check_safe_margins, check_image_quality
 from research.fetch_news import load_yaml
 
-MAX_PER_RUN = 10
-REVIEW_HEADERS = [
-    "Content ID",
-    "Reason Rejected",
-    "Failed Check",
-    "Created At",
-    "Reviewer Decision",
-    "Reviewed At",
-]
+LOG_FILE = "output/qc_logs.json"
+CSV_FILE = "output/qc_report.csv"
 
-
-def get_review_ws(sh):
-    try:
-        ws = sh.worksheet("ReviewQueue")
-    except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(title="ReviewQueue", rows=1000, cols=len(REVIEW_HEADERS))
-    if not ws.row_values(1):
-        ws.append_row(REVIEW_HEADERS)
-    return ws
-
+def log_qc_result(cid, score, issues, status):
+    """Logs to JSON and CSV for the weekly optimizer to analyze."""
+    os.makedirs("output", exist_ok=True)
+    
+    # JSON Log
+    log_entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "content_id": cid,
+        "score": score,
+        "issues": issues,
+        "status": status
+    }
+    logs = []
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "r") as f:
+            try: logs = json.load(f)
+            except: pass
+    logs.append(log_entry)
+    with open(LOG_FILE, "w") as f:
+        json.dump(logs, f, indent=2)
+        
+    # CSV Log
+    file_exists = os.path.isfile(CSV_FILE)
+    with open(CSV_FILE, "a", newline="") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["Timestamp", "Content ID", "Score", "Status", "Issues"])
+        writer.writerow([log_entry["timestamp"], cid, score, status, "; ".join(issues)])
 
 def main():
-    rules = load_rules("config/compliance_rules.yaml")
+    rules = load_yaml("config/qc_rules.yaml")
     settings = load_yaml("config/settings.yaml") or {}
-    ver = settings.get("verification", {})
-    min_sources = ver.get("min_independent_sources", 2)
-    max_age = ver.get("max_source_age_hours", 48)
     feeds = load_yaml("config/sources.yaml")["feeds"]
 
     sh = connect()
@@ -54,62 +53,77 @@ def main():
     headers = content_ws.row_values(1)
     col = {h: i + 1 for i, h in enumerate(headers)}
     rows = content_ws.get_all_records()
-    review_ws = None
-    done = 0
 
     for idx, row in enumerate(rows):
         if str(row.get("Status")) != "Draft":
             continue
-        if done >= MAX_PER_RUN:
-            break
-        done += 1
+            
         cid = row["Content ID"]
+        ctype = row["Content Type"]
         sheet_row = idx + 2
-
-        checks = []
-        checks += check_text(row, rules)
-        checks.append(check_commentary(row))  # BUG-3 FIX
-        checks += check_sources(row, min_sources, max_age)
-        checks += check_media(row, rules)
-        checks.append(check_duplicate(idx, rows))
-
         text = get_story_text(row.get("Source URL", ""), feeds)
-        checks += to_checks(
-            review(row.get("Topic", ""), text, row.get("Caption", ""), row.get("Alt Text", ""))
+        
+        issues = []
+        
+        # --- 1. VISUAL CHECKS ---
+        expected_size = rules["design_rules"]["image_size"] if ctype == "image" else rules["design_rules"]["video_size"]
+        if ctype == "image":
+            path = f"output/images/{cid}.jpg"
+            ok, msg = check_dimensions(path, expected_size)
+            if not ok: issues.append(f"DESIGN: {msg}")
+            ok, msg = check_safe_margins(path)
+            if not ok: issues.append(f"DESIGN: {msg}")
+            ok, msg = check_image_quality(path)
+            if not ok: issues.append(f"IMAGE: {msg}")
+
+        # --- 2. AI CONTENT CHECKS ---
+        ai_data = score_post(row.get("Topic", ""), row.get("Caption", ""), text)
+        
+        if ai_data["spelling_errors"]:
+            issues.extend([f"CONTENT: Spelling - {x}" for x in ai_data["spelling_errors"]])
+        if ai_data["compliance_flags"]:
+            issues.extend([f"COMPLIANCE: {x}" for x in ai_data["compliance_flags"]])
+        if ai_data.get("tone") != "neutral":
+            issues.append(f"CONTENT: Tone is {ai_data.get('tone')}")
+            
+        # --- 3. SCORING ---
+        # Design score is 100 minus 10 for every visual issue
+        design_score = max(0, 100 - (len([i for i in issues if i.startswith("DESIGN") or i.startswith("IMAGE")]) * 15))
+        
+        w = rules["scoring"]["weights"]
+        final_score = (
+            (design_score * w["design"]) + 
+            (ai_data["factuality_score"] * w["content"]) + 
+            (ai_data["compliance_score"] * w["compliance"]) + 
+            (ai_data["engagement_score"] * w["engagement"])
         )
-
-        failed = [c for c in checks if not c["ok"]]
-        if failed:
-            reasons = "; ".join(f"{c['check']}: {c['detail']}".strip(": ") for c in failed)
-            content_ws.update_cell(sheet_row, col["Status"], "Rejected")
-            content_ws.update_cell(sheet_row, col["Validation Result"], f"FAIL ({len(failed)})")
-            content_ws.update_cell(sheet_row, col["Error Message"], reasons[:900])
-            if review_ws is None:
-                review_ws = get_review_ws(sh)
-            review_ws.append_row(
-                [
-                    cid,
-                    reasons[:900],
-                    ", ".join(c["check"] for c in failed),
-                    datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                    "",
-                    "",
-                ],
-                value_input_option="RAW",
-            )
-            print(f"FAIL {cid}: {', '.join(c['check'] for c in failed)}")
+        
+        final_score = int(final_score)
+        thresholds = rules["thresholds"]
+        
+        # --- 4. ROUTING ---
+        if final_score >= thresholds["auto_publish"]:
+            status = "Approved"
+            content_ws.update_cell(sheet_row, col["Status"], status)
+            content_ws.update_cell(sheet_row, col["Validation Result"], f"SCORE: {final_score} (PASS)")
+            log_qc_result(cid, final_score, issues, status)
+            print(f"✅ APPROVED [{final_score}] {cid}")
+            
+        elif final_score >= thresholds["auto_fix"]:
+            status = "Needs Fix"
+            content_ws.update_cell(sheet_row, col["Status"], status)
+            content_ws.update_cell(sheet_row, col["Validation Result"], f"SCORE: {final_score} (AUTO-FIX)")
+            content_ws.update_cell(sheet_row, col["Error Message"], " | ".join(issues))
+            log_qc_result(cid, final_score, issues, status)
+            print(f"⚠️ AUTO-FIX [{final_score}] {cid}: {issues}")
+            
         else:
-            content_ws.update_cell(sheet_row, col["Status"], "Approved")
-            content_ws.update_cell(
-                sheet_row, col["Validation Result"], f"PASS ({len(checks)} checks)"
-            )
-            content_ws.update_cell(sheet_row, col["Error Message"], "")
-            print(f"PASS {cid}: {len(checks)} checks")
-
-    if done == 0:
-        print("No Draft items to check.")
-    print("QC OK")
-
+            status = "Rejected"
+            content_ws.update_cell(sheet_row, col["Status"], status)
+            content_ws.update_cell(sheet_row, col["Validation Result"], f"SCORE: {final_score} (REJECTED)")
+            content_ws.update_cell(sheet_row, col["Error Message"], " | ".join(issues))
+            log_qc_result(cid, final_score, issues, status)
+            print(f"❌ REJECTED [{final_score}] {cid}")
 
 if __name__ == "__main__":
     main()

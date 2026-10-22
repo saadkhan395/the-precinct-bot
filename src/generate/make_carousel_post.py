@@ -6,8 +6,8 @@ from generate.carousel_copy import write_carousel
 from generate.make_image_post import connect, get_content_ws
 from generate.story_text import get_story_text
 from media.render_carousel import render_carousel
+from media.fetch_image import get_image_for_headline, get_image_for_slide
 from research.fetch_news import load_yaml
-
 
 def candidates(research_ws, used_ids, max_age_hours):
     now = datetime.now(timezone.utc)
@@ -30,7 +30,6 @@ def candidates(research_ws, used_ids, max_age_hours):
         reverse=True,
     )
     return found
-
 
 def main():
     settings = load_yaml("config/settings.yaml") or {}
@@ -71,10 +70,32 @@ def main():
 
     cid = "CAR-" + str(story["Cluster ID"])
     outlets = story["Outlets"]
+    source_count = int(story["Source Count"])
     print(f"Story selected: {story['Headline']} ({outlets})")
+
+    # --- FETCH UNIQUE IMAGES PER SLIDE ---
+    print("Fetching real images for carousel slides...")
+    image_urls = []
     
+    # 1. Cover image
+    cover_img = get_image_for_headline(story["Headline"], story["Source URLs"])
+    image_urls.append(cover_img or "")
+    
+    # 2. Slide 1 image
+    s1_text = copy["slides"][0]["points"][0] if copy["slides"] else story["Headline"]
+    s1_img = get_image_for_slide(s1_text)
+    image_urls.append(s1_img or cover_img or "")
+    
+    # 3. Slide 2 image
+    s2_text = copy["slides"][1]["points"][0] if len(copy["slides"]) > 1 else story["Headline"]
+    s2_img = get_image_for_slide(s2_text)
+    image_urls.append(s2_img or cover_img or "")
+
+    # 4. CTA image (reuses cover)
+    image_urls.append(cover_img or "")
+
     paths, style = render_carousel(
-        cid, copy, outlets, int(story["Source Count"]), carousel_count
+        cid, copy, outlets, source_count, carousel_count, image_urls
     )
 
     caption = (
@@ -107,7 +128,6 @@ def main():
     )
     print(f"Slides saved: {len(paths)} in output/carousels/{cid} (style: {style})")
     print("CAROUSEL OK")
-
 
 if __name__ == "__main__":
     main()

@@ -1,136 +1,221 @@
 import os
-import shutil
+import io
+import requests
+from PIL import Image, ImageDraw, ImageFont
 
-from PIL import ImageDraw
+W, H = 1080, 1350
+MARGIN = 90
+MAX_W = W - (MARGIN * 2)
+SPLIT_Y = 750 # Image on top 750px, Black box bottom 600px
 
-from media.render_image import (
-    MARGIN,
-    STYLES,
-    W,
-    fit_text,
-    font,
-    gradient,
-    render_post,
-    wrap,
-)
+FONT_PATHS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf"]
 
+def font(size):
+    for p in FONT_PATHS:
+        if os.path.exists(p): return ImageFont.truetype(p, size)
+    return ImageFont.load_default()
 
-def base(style):
-    img = gradient(style["top"], style["bottom"])
-    draw = ImageDraw.Draw(img)
-    draw.text((MARGIN, 90), "THE DAILY PRECINCT", font=font(34), fill=style["accent"])
-    draw.rectangle([MARGIN, 145, MARGIN + 140, 151], fill=style["accent"])
-    return img, draw
+def download_and_process_bg(url):
+    """Downloads image and crops perfectly to 1080x750."""
+    if not url:
+        return Image.new("RGB", (W, SPLIT_Y), (10, 10, 10))
+    try:
+        resp = requests.get(url, timeout=20)
+        resp.raise_for_status()
+        img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+        
+        target_ratio = W / SPLIT_Y
+        img_ratio = img.width / img.height
+        if img_ratio > target_ratio:
+            new_width = int(target_ratio * img.height)
+            left = (img.width - new_width) // 2
+            img = img.crop((left, 0, left + new_width, img.height))
+        else:
+            new_height = int(img.width / target_ratio)
+            top = (img.height - new_height) // 2
+            img = img.crop((0, top, img.width, top + new_height))
+            
+        img = img.resize((W, SPLIT_Y), Image.Resampling.LANCZOS)
+        return img
+    except Exception as e:
+        print(f"Image download failed: {e}")
+        return Image.new("RGB", (W, SPLIT_Y), (10, 10, 10))
 
+def draw_centered_text(draw, text, f, y, color, bg_color=None, padding_x=20, padding_y=10):
+    w = draw.textlength(text, font=f)
+    x = (W - w) / 2
+    if bg_color:
+        draw.rectangle(
+            [(x - padding_x, y - padding_y), (x + w + padding_x, y + f.size + padding_y)],
+            fill=bg_color
+        )
+    draw.text((x, y), text, font=f, fill=color)
 
-def footer(draw, style, n, total):
-    draw.text(
-        (MARGIN, 1275), "@thedailyprecinct", font=font(30), fill=style["accent"]
-    )
+def draw_branding(draw):
+    draw.text((MARGIN, 90), "THE DAILY PRECINCT", font=font(34), fill=(255, 255, 255))
+    draw.rectangle([MARGIN, 145, MARGIN + 140, 151], fill=(220, 40, 40))
+
+def draw_footer(draw, n, total):
+    draw.text((MARGIN, 1270), "@thedailyprecinct", font=font(28), fill=(220, 40, 40))
     label = f"{n}/{total}"
-    f = font(30)
-    w = draw.textlength(label, font=f)
-    draw.text((W - MARGIN - w, 1275), label, font=f, fill=style["muted"])
+    w = draw.textlength(label, font=font(28))
+    draw.text((W - MARGIN - w, 1270), label, font=font(28), fill=(150, 150, 150))
 
+def premium_slide(image_url, title, points, n, total, path):
+    img = Image.new("RGB", (W, H), (0, 0, 0))
+    top_img = download_and_process_bg(image_url)
+    img.paste(top_img, (0, 0))
+    
+    draw = ImageDraw.Draw(img)
+    draw_branding(draw)
 
-def fit_points(draw, points, max_w, max_h, start=56, min_size=34):
-    size = start
-    while True:
-        f = font(size)
-        lh = int(size * 1.25)
-        gap = int(size * 0.9)
-        blocks = [wrap(draw, p, f, max_w) for p in points]
-        total = sum(len(b) * lh for b in blocks) + gap * (len(blocks) - 1)
-        if total <= max_h or size <= min_size:
-            return f, blocks, lh, gap
-        size -= 2
+    # Title (Red Block)
+    title_font = font(46)
+    draw_centered_text(draw, title.upper(), title_font, 800, (255, 255, 255), bg_color=(220, 40, 40))
+    
+    # Points
+    y = 890
+    body_font = font(36)
+    for point in points:
+        # Wrap text
+        lines, cur = [], ""
+        for word in point.split():
+            trial = (cur + " " + word).strip()
+            if draw.textlength(trial, font=body_font) <= MAX_W - 40:
+                cur = trial
+            else:
+                if cur: lines.append(cur)
+                cur = word
+        if cur: lines.append(cur)
+        
+        # Draw bullet
+        draw.rectangle([MARGIN, y + 10, MARGIN + 16, y + 26], fill=(220, 40, 40))
+        
+        for line in lines:
+            draw.text((MARGIN + 40, y), line, font=body_font, fill=(255, 255, 255))
+            y += int(body_font.size * 1.3)
+        y += 20 # Gap between bullets
 
-
-def bullet(draw, style, y, lh):
-    top = y + int(lh * 0.3)
-    draw.rectangle([MARGIN, top, MARGIN + 16, top + 16], fill=style["accent"])
-
-
-def points_slide(style, title, points, n, total, path):
-    img, draw = base(style)
-    max_w = W - 2 * MARGIN - 50
-    draw.text((MARGIN, 250), title.upper(), font=font(52), fill=style["accent"])
-    f, blocks, lh, gap = fit_points(draw, points, max_w, 720)
-    y = 360
-    for block in blocks:
-        bullet(draw, style, y, lh)
-        for line in block:
-            draw.text((MARGIN + 50, y), line, font=f, fill=style["text"])
-            y += lh
-        y += gap
-    footer(draw, style, n, total)
+    draw_footer(draw, n, total)
     img.save(path, "JPEG", quality=92)
 
+def cover_slide(image_url, copy, n, total, path):
+    img = Image.new("RGB", (W, H), (0, 0, 0))
+    top_img = download_and_process_bg(image_url)
+    img.paste(top_img, (0, 0))
+    
+    draw = ImageDraw.Draw(img)
+    draw_branding(draw)
 
-def sources_slide(style, outlet_list, count, n, total, path):
-    img, draw = base(style)
-    max_w = W - 2 * MARGIN
-    draw.text((MARGIN, 250), "WHO'S REPORTING", font=font(52), fill=style["accent"])
-    f = font(46)
-    y = 360
-    for o in outlet_list[:8]:
-        bullet(draw, style, y, 56)
-        draw.text((MARGIN + 50, y), o, font=f, fill=style["text"])
-        y += 72
-    y += 30
-    small = font(34)
-    for line in wrap(draw, f"Verified by {count} independent outlets", small, max_w):
-        draw.text((MARGIN, y), line, font=small, fill=style["muted"])
-        y += 46
-    footer(draw, style, n, total)
-    img.save(path, "JPEG", quality=92)
+    # Hook
+    hook_font = font(48)
+    draw_centered_text(draw, copy["hook"].upper(), hook_font, 800, (255, 255, 255), bg_color=(220, 40, 40))
 
+    # Headline
+    head_font = font(42)
+    y = 900
+    lines, cur = [], ""
+    for word in copy["cover_headline"].split():
+        trial = (cur + " " + word).strip()
+        if draw.textlength(trial, font=head_font) <= MAX_W:
+            cur = trial
+        else:
+            if cur: lines.append(cur)
+            cur = word
+    if cur: lines.append(cur)
 
-def cta_slide(style, cta, n, total, path):
-    img, draw = base(style)
-    max_w = W - 2 * MARGIN
-    draw.text((MARGIN, 380), "FOLLOW FOR MORE", font=font(52), fill=style["accent"])
-    f, lines, lh = fit_text(draw, cta, max_w, 420, start=72, min_size=44)
-    y = 470
     for line in lines:
-        draw.text((MARGIN, y), line, font=f, fill=style["text"])
-        y += lh
-    small = font(30)
-    y = max(y + 60, 1000)
-    note = "Summarized from public reporting. Read the full stories at the sources."
-    for line in wrap(draw, note, small, max_w):
-        draw.text((MARGIN, y), line, font=small, fill=style["muted"])
-        y += 40
-    footer(draw, style, n, total)
+        draw_centered_text(draw, line, head_font, y, (255, 255, 255))
+        y += int(head_font.size * 1.3)
+
+    draw_footer(draw, n, total)
     img.save(path, "JPEG", quality=92)
 
+def sources_slide(outlet_list, count, n, total, path):
+    img = Image.new("RGB", (W, H), (10, 15, 30))
+    draw = ImageDraw.Draw(img)
+    draw_branding(draw)
 
-def render_carousel(cid, copy, outlets, source_count, index):
-    style = STYLES[index % len(STYLES)]
+    draw_centered_text(draw, "WHO'S REPORTING", font(48), 400, (255, 255, 255), bg_color=(220, 40, 40))
+    
+    y = 520
+    for o in outlet_list[:8]:
+        draw_centered_text(draw, o, font(44), y, (255, 255, 255))
+        y += 80
+        
+    draw_centered_text(draw, f"Verified by {count} independent outlets", font(32), y + 40, (150, 150, 150))
+    
+    draw_footer(draw, n, total)
+    img.save(path, "JPEG", quality=92)
+
+def cta_slide(image_url, cta, n, total, path):
+    # Premium CTA: Blurred background image
+    img = download_and_process_bg(image_url)
+    # Create full canvas
+    full_img = Image.new("RGB", (W, H), (0, 0, 0))
+    full_img.paste(img, (0, 0))
+    
+    # We won't actually blur because it's expensive, we'll just use a heavy dark overlay
+    draw = ImageDraw.Draw(full_img)
+    draw.rectangle([(0, 0), (W, H)], fill=(0, 0, 0, 200)) # Very dark overlay
+    
+    draw_branding(draw)
+
+    draw_centered_text(draw, "FOLLOW FOR MORE", font(56), 500, (255, 255, 255), bg_color=(220, 40, 40))
+    
+    # The CTA text
+    y = 650
+    body_font = font(44)
+    lines, cur = [], ""
+    for word in cta.split():
+        trial = (cur + " " + word).strip()
+        if draw.textlength(trial, font=body_font) <= MAX_W:
+            cur = trial
+        else:
+            if cur: lines.append(cur)
+            cur = word
+    if cur: lines.append(cur)
+    
+    for line in lines:
+        draw_centered_text(draw, line, body_font, y, (255, 255, 255))
+        y += int(body_font.size * 1.3)
+
+    draw_centered_text(draw, "Politics without the noise.", font(32), 900, (200, 200, 200))
+    draw_centered_text(draw, "@thedailyprecinct", font(36), 1100, (220, 40, 40))
+
+    draw_footer(draw, n, total)
+    full_img.save(path, "JPEG", quality=92)
+
+def render_carousel(cid, copy, outlets, source_count, index, image_urls):
     folder = f"output/carousels/{cid}"
     os.makedirs(folder, exist_ok=True)
+    
+    paths = []
+    
+    # Cover
+    p1 = f"{folder}/slide-1.jpg"
+    cover_slide(image_urls[0], copy, 1, 5, p1)
+    paths.append(p1)
 
-    cover_tmp, _ = render_post(
-        cid, copy["hook"], copy["cover_headline"], outlets, source_count, index
-    )
-    paths = [f"{folder}/slide-1.jpg"]
-    shutil.move(cover_tmp, paths[0])
+    # Slide 2
+    p2 = f"{folder}/slide-2.jpg"
+    premium_slide(image_urls[1], copy["slides"][0]["title"], copy["slides"][0]["points"], 2, 5, p2)
+    paths.append(p2)
 
-    total = 1 + len(copy["slides"]) + 2
-    n = 2
-    for s in copy["slides"]:
-        p = f"{folder}/slide-{n}.jpg"
-        points_slide(style, s["title"], s["points"], n, total, p)
-        paths.append(p)
-        n += 1
+    # Slide 3
+    p3 = f"{folder}/slide-3.jpg"
+    premium_slide(image_urls[2], copy["slides"][1]["title"], copy["slides"][1]["points"], 3, 5, p3)
+    paths.append(p3)
 
+    # Slide 4 (Sources)
+    p4 = f"{folder}/slide-4.jpg"
     outlet_list = [o.strip() for o in outlets.split(",") if o.strip()]
-    p = f"{folder}/slide-{n}.jpg"
-    sources_slide(style, outlet_list, source_count, n, total, p)
-    paths.append(p)
-    n += 1
+    sources_slide(outlet_list, source_count, 4, 5, p4)
+    paths.append(p4)
 
-    p = f"{folder}/slide-{n}.jpg"
-    cta_slide(style, copy["cta"], n, total, p)
-    paths.append(p)
-    return paths, style["name"]
+    # Slide 5 (CTA)
+    p5 = f"{folder}/slide-5.jpg"
+    cta_slide(image_urls[3], copy["cta"], 5, 5, p5)
+    paths.append(p5)
+
+    return paths, "editorial"

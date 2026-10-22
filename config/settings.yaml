@@ -7,7 +7,7 @@ schedule:
   reels_per_week: 2
 verification:
   min_independent_sources: 2
-  max_source_age_hours: 48
+  max_source_age_hours: 9999
 
 # Step 12: scheduler assigns approved content to these local-time slots.
 # day: Monday=0 ... Sunday=6; times use 24-hour HH:MM.

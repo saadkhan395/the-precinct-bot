@@ -1,0 +1,26 @@
+scoring:
+  weights:
+    design: 0.25
+    content: 0.35
+    compliance: 0.25
+    engagement: 0.15
+  
+thresholds:
+  auto_publish: 85
+  auto_fix: 70
+  max_retries: 3
+
+design_rules:
+  image_size: [1080, 1350]
+  video_size: [1080, 1920]
+  safe_margin_px: 90
+  min_contrast_ratio: 4.5 # WCAG AA standard
+  brand_colors:
+    primary: "#DC2828" # Red
+    background: "#000000"
+    text: "#FFFFFF"
+
+compliance:
+  require_citations: true
+  banned_words: ["shocking", "bombshell", "you won't believe", "exposed"]
+  require_disclosures: false # Set to true if posting political ads

@@ -1,0 +1,23 @@
+name: Weekly Design Upgrade
+on:
+  schedule:
+    - cron: "0 0 * * 0" # Every Sunday at midnight
+  workflow_dispatch:
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests pyyaml
+      - run: python src/qc/weekly_optimizer.py
+      - name: Save upgrade report
+        run: |
+          git config user.name "daily-present-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add config/ output/
+          git commit -m "Auto-upgrade: Weekly design optimization" || exit 0
+          git push

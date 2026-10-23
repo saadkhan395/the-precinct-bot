@@ -23,17 +23,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install FFmpeg
-        uses: FedericoCarboni/setup-ffmpeg@v3
+      - name: Setup FFmpeg
+        uses: AnimMouse/setup-ffmpeg@v1
         with:
-          ffmpeg-version: release
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Fonts
-        timeout-minutes: 2
+      - name: Install Fonts (with timeout and retries)
+        timeout-minutes: 3
         run: |
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends fonts-dejavu-core
+          APT_RESILIENCE="-o Acquire::http::Timeout=30 -o Acquire::Retries=3"
+          sudo apt-get $APT_RESILIENCE update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get $APT_RESILIENCE install -y -qq --no-install-recommends fonts-dejavu-core
 
       - run: pip install requests feedparser pyyaml gspread google-auth groq pillow
 

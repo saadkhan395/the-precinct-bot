@@ -6,13 +6,19 @@ from PIL import Image, ImageDraw, ImageFont
 RW, RH = 1080, 1920
 MARGIN = 90
 MAX_W = RW - (MARGIN * 2)
-BOX_TOP = 1250 # Where the black box starts on vertical video
+BOX_TOP = 1100 # Text safe zone for Reels
+BOX_BOTTOM = 1600
+
+C_BG = (10, 22, 48)
+C_ACCENT = (201, 162, 39)
+C_TEXT = (230, 235, 240)
+C_MUTED = (140, 160, 180)
 
 FONT_PATHS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf"]
 
 PACING = [
-    {"name": "quick", "hook": 2.5, "headline": 4.0, "fact": 3.5, "sources": 3.0, "cta": 3.0},
-    {"name": "standard", "hook": 3.0, "headline": 5.0, "fact": 4.5, "sources": 3.5, "cta": 3.5},
+    {"name": "quick", "hook": 3.0, "headline": 3.0, "fact": 4.0, "sources": 3.0, "cta": 3.0},
+    {"name": "standard", "hook": 3.5, "headline": 4.0, "fact": 5.0, "sources": 3.5, "cta": 3.5},
 ]
 
 def font(size):
@@ -21,7 +27,6 @@ def font(size):
     return ImageFont.load_default()
 
 def download_vertical_bg(url):
-    """Downloads image and crops to 1080x1920 with solid black bottom."""
     try:
         resp = requests.get(url, timeout=20)
         resp.raise_for_status()
@@ -40,13 +45,14 @@ def download_vertical_bg(url):
             
         img = img.resize((RW, RH), Image.Resampling.LANCZOS)
         
-        # Solid black box at the bottom
         draw = ImageDraw.Draw(img)
-        draw.rectangle([(0, BOX_TOP), (RW, RH)], fill=(0, 0, 0))
+        draw.rectangle([(0, BOX_TOP - 50), (RW, BOX_BOTTOM + 150)], fill=C_BG)
         return img
-    except Exception as e:
-        print(f"Reel image failed: {e}")
-        return Image.new("RGB", (RW, RH), (10, 10, 10))
+    except Exception:
+        img = Image.new("RGB", (RW, RH), C_BG)
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([(0, BOX_TOP - 50), (RW, BOX_BOTTOM + 150)], fill=C_BG)
+        return img
 
 def wrap_text(draw, text, f, max_w):
     lines, cur = [], ""
@@ -60,52 +66,50 @@ def wrap_text(draw, text, f, max_w):
     if cur: lines.append(cur)
     return lines
 
-def draw_center(draw, text, f, y, color, stroke=0):
+def draw_center(draw, text, f, y, color, bg_color=None, padding_x=20, padding_y=10):
     w = draw.textlength(text, font=f)
     x = (RW - w) / 2
-    if stroke > 0:
-        draw.text((x, y), text, font=f, fill=color, stroke_width=stroke, stroke_fill=(0,0,0))
-    else:
-        draw.text((x, y), text, font=f, fill=color)
+    if bg_color:
+        draw.rectangle(
+            [(x - padding_x, y - padding_y), (x + w + padding_x, y + f.size + padding_y)],
+            fill=bg_color
+        )
+    draw.text((x, y), text, font=f, fill=color)
 
-def base_frame(image_url=None):
-    """Creates the base vertical frame with the image and black box."""
-    if image_url:
-        img = download_vertical_bg(image_url)
-    else:
-        img = Image.new("RGB", (RW, RH), (10, 10, 10))
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([(0, BOX_TOP), (RW, RH)], fill=(0, 0, 0))
-        
+def base_frame(image_url):
+    img = download_vertical_bg(image_url)
     draw = ImageDraw.Draw(img)
-    # Top Branding
-    draw.text((MARGIN, 120), "THE DAILY PRECINCT", font=font(40), fill=(255, 255, 255))
-    draw.rectangle([MARGIN, 180, MARGIN + 150, 188], fill=(220, 40, 40))
+    draw.text((MARGIN, 150), "THE DAILY PRECINCT", font=font(40), fill=C_TEXT)
+    draw.rectangle([MARGIN, 210, MARGIN + 150, 218], fill=C_ACCENT)
     return img, draw
 
-def draw_premium_text(draw, hook, headline, source_count, outlets):
-    """Draws the premium red/white text inside the black box."""
-    y_cursor = BOX_TOP + 60
+def draw_premium_text(draw, hook, headline):
+    hook_font = font(56)
+    head_font = font(46)
     
-    # Red Hook
-    hook_font = font(64)
-    for line in wrap_text(draw, hook.upper(), hook_font, MAX_W):
-        draw_center(draw, line, hook_font, y_cursor, (220, 40, 40), stroke=3)
-        y_cursor += int(hook_font.size * 1.15)
-        
-    y_cursor += 20 # Gap
+    hook_lines = wrap_text(draw, hook.upper(), hook_font, MAX_W)
+    head_lines = wrap_text(draw, headline, head_font, MAX_W)
     
-    # White Headline
-    head_font = font(52)
-    for line in wrap_text(draw, headline, head_font, MAX_W):
-        draw_center(draw, line, head_font, y_cursor, (255, 255, 255), stroke=2)
-        y_cursor += int(head_font.size * 1.15)
+    elements = []
+    for l in hook_lines:
+        elements.append({"text": l, "font": hook_font, "color": C_BG, "bg": C_ACCENT, "h": int(hook_font.size * 1.3)})
         
-    # Footer
-    draw_center(draw, f"VERIFIED BY {source_count} OUTLETS", font(30), 1760, (180, 180, 180))
-    draw_center(draw, f"Sources: {outlets}", font(28), 1810, (180, 180, 180))
+    if hook_lines and head_lines:
+        elements.append({"text": "", "font": head_font, "color": C_BG, "bg": None, "h": 30})
+        
+    for l in head_lines:
+        elements.append({"text": l, "font": head_font, "color": C_TEXT, "bg": None, "h": int(head_font.size * 1.4)})
 
-def render_scenes(cid, copy, outlets, source_count, index, image_url=None):
+    total_h = sum(e["h"] for e in elements)
+    start_y = BOX_TOP + ((BOX_BOTTOM - BOX_TOP) - total_h) // 2
+    
+    y_cursor = start_y
+    for e in elements:
+        if e["text"]:
+            draw_center(draw, e["text"], e["font"], y_cursor, e["color"], bg_color=e["bg"])
+        y_cursor += e["h"]
+
+def render_scenes(cid, copy, outlets, source_count, index, image_urls):
     pace = PACING[index % len(PACING)]
     folder = f"output/reels/{cid}_frames"
     os.makedirs(folder, exist_ok=True)
@@ -116,21 +120,19 @@ def render_scenes(cid, copy, outlets, source_count, index, image_url=None):
         img.save(p, "PNG")
         scenes.append((p, seconds))
 
-    # Scene 1: Hook & Headline (Premium Layout)
-    img, draw = base_frame(image_url)
-    draw_premium_text(draw, copy["hook"], copy["cover_headline"], source_count, outlets)
+    img, draw = base_frame(image_urls[0])
+    draw_premium_text(draw, copy["hook"], copy["cover_headline"])
     save(img, "s01_premium", pace["hook"] + pace["headline"])
 
-    # Scene 2: Facts (Overlay text on the image)
     n = 2
-    for s in copy["slides"]:
+    for i, s in enumerate(copy["slides"]):
         for point in s["points"]:
-            if n > 5:
-                break
-            img, draw = base_frame(image_url)
-            # Re-use the premium text drawer for facts
-            draw_premium_text(draw, s["title"], point, source_count, outlets)
+            if n > 3: break
+            
+            img_url = image_urls[n-1] if n-1 < len(image_urls) else image_urls[0]
+            img, draw = base_frame(img_url)
+            draw_premium_text(draw, s["title"], point)
             save(img, f"s{n:02d}_fact", pace["fact"])
             n += 1
 
-    return scenes, "editorial", pace["name"], folder
+    return scenes, "elite_editorial", pace["name"], folder

@@ -1,8 +1,12 @@
 name: Weekly Design Upgrade
+
 on:
   schedule:
     - cron: "0 0 * * 0" # Every Sunday at midnight
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   upgrade:
@@ -16,7 +20,7 @@ jobs:
       - run: python src/qc/weekly_optimizer.py
       - name: Save upgrade report
         run: |
-          git config user.name "daily-present-bot"
+          git config user.name "daily-precinct-bot"
           git config user.email "bot@users.noreply.github.com"
           git add config/ output/
           git commit -m "Auto-upgrade: Weekly design optimization" || exit 0

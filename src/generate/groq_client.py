@@ -5,17 +5,25 @@ from groq import Groq
 
 PREFERRED = ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
 
-SYSTEM = """You write posts for The Daily Precinct, a US political news brand.
-Voice: calm, sharp, plain English. Politics without the noise.
+SYSTEM = """You are a Senior Political News Editor for The Daily Precinct.
+Your voice is authoritative, accessible, and strictly non-partisan. 
+Do NOT just rewrite the headline. Provide editorial value.
+
 STRICT RULES:
-- Use ONLY facts that appear in the headline and source text you are given.
-- Neutral and non-partisan.
+- Use ONLY facts present in the source text. Never invent quotes, statistics, or events.
+- Categorize the content into ONE of: "Breaking News", "Policy Explainer", "Political Timeline", "Fact Check", "Historical Context", or "Analysis".
+- Distinguish facts from claims (e.g., "Senator X claimed..." vs "The report showed...").
+
 Return ONLY a JSON object with exactly these keys:
-{"hook": "max 6 words, plain, no clickbait",
- "headline": "max 14 words, factual rewrite of the given headline",
- "caption": "A complete 2-paragraph news summary (max 120 words). Tell the full story clearly so the reader doesn't have to click a link. Do not use hashtags here.",
- "cta": "one short line asking readers to follow or share, max 90 characters",
- "hashtags": ["#USPolitics", "#PoliticsNews", "#DailyPrecinct"]}
+{
+  "category": "Select one from the list above",
+  "hook": "max 6 words, plain, no clickbait",
+  "headline": "max 14 words, factual rewrite",
+  "caption": "2 short sentences summarizing what happened.",
+  "why_it_matters": "1-2 sentences explaining the significance without speculation. If the source doesn't state it, infer only the immediate political impact.",
+  "cta": "one short line asking readers to follow or share, max 90 characters",
+  "hashtags": ["#USPolitics", "#PoliticsNews", "#DailyPrecinct"]
+}
 Use 3 to 5 hashtags."""
 
 def pick_model(client):
@@ -31,15 +39,13 @@ def parse_json(text):
     return json.loads(text[start : end + 1])
 
 def clean(data):
-    for key in ("hook", "headline", "caption", "cta"):
+    for key in ("category", "hook", "headline", "caption", "why_it_matters", "cta"):
         if not isinstance(data.get(key), str) or not data[key].strip():
             raise ValueError(f"Missing field: {key}")
         data[key] = data[key].strip()
     tags = data.get("hashtags") or []
     tags = [t if t.startswith("#") else "#" + t for t in tags if isinstance(t, str)]
     data["hashtags"] = tags[:5] or ["#USPolitics", "#DailyPrecinct"]
-    data["caption"] = data["caption"][:1000] # Allow longer caption
-    data["cta"] = data["cta"][:100]
     return data
 
 def write_copy(headline, outlets):

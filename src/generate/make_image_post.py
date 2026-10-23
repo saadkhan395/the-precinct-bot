@@ -72,7 +72,16 @@ def main():
     outlets = story["Outlets"]
     source_urls = story["Source URLs"]
     print(f"Story: {story['Headline']} ({outlets})")
-    copy = write_copy(story["Headline"], outlets)
+    
+caption = (
+    f"📌 {copy['category'].upper()}\n\n"
+    f"{copy['caption']}\n\n"
+    f"💡 Why it matters:\n{copy['why_it_matters']}\n\n"
+    f"{copy['cta']}\n\n"
+    f"Sources: {outlets}\n\n"
+    + " ".join(copy["hashtags"])
+)
+alt = f"{copy['category']} graphic from The Daily Precinct. Headline: {copy['headline']}. Why it matters: {copy['why_it_matters']}. Reported by {outlets}."
     
     print("Fetching background image...")
     image_url = get_image_for_headline(story["Headline"], source_urls)

@@ -99,8 +99,13 @@ def main():
     )
 
     caption = (
-        f"{copy['caption']}\n\n{copy['cta']}\n\nSources: {outlets}\n\n"
-        + " ".join(copy["hashtags"])
+    f"📌 {copy['category'].upper()}\n\n"
+    f"{copy['caption']}\n\n"
+    f"💡 Why it matters:\n{copy['why_it_matters']}\n\n"
+    f"{copy['cta']}\n\n"
+    f"Sources: {outlets}\n\n"
+    + " ".join(copy["hashtags"])
+)
     )
     alts = [f"Slide 1: {copy['cover_headline']}"]
     for i, s in enumerate(copy["slides"], start=2):

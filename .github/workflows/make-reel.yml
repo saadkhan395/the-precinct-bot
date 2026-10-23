@@ -18,10 +18,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install FFmpeg and Fonts
+      - name: Install FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          ffmpeg-version: release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Fonts
+        timeout-minutes: 2
         run: |
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends fonts-dejavu-core
 
       - run: pip install requests feedparser pyyaml gspread google-auth groq pillow
 

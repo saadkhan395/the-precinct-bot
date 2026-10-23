@@ -4,23 +4,25 @@ import json
 from groq import Groq
 from generate.groq_client import pick_model
 
-SYSTEM_PROMPT = """You are a Senior QA Engineer for a US political news brand.
-Evaluate the provided post (headline, caption, sources) and return ONLY a JSON object:
-{
-  "design_issues": [], 
-  "factuality_score": 0-100,
-  "compliance_score": 0-100,
-  "engagement_score": 0-100,
-  "tone": "neutral|biased",
-  "spelling_errors": [],
-  "compliance_flags": [],
-  "reasoning": "Brief explanation of scores"
-}
+SYSTEM = """You are a strict editorial QA engineer for The Daily Precinct.
+Evaluate the DRAFT POST against the SOURCE TEXT.
+Check:
+1. Factuality: Every claim must be supported by the source. List any unsupported claims.
+2. Context: Does the "why_it_matters" section provide genuine editorial value without speculation?
+3. Classification: Are claims correctly attributed (e.g., "claimed" vs "stated as fact")?
+4. Tone: Neutral, authoritative, non-partisan.
+5. Policy: No hate speech, incitement, or medical misinformation.
+Return ONLY a JSON object:
+{"unsupported_claims": [], "spelling_errors": [], "neutral_tone": true, "has_context": true, "policy_flags": [], "reasoning": "brief explanation", "verdict": "pass"}
+"""
+# (Update the `review` function in ai_review.py to pass `why_it_matters` into the prompt as well).
+
 RULES:
 - factuality: 100 means every claim is supported by the source. 0 means hallucinations.
-- compliance: 100 means perfectly safe for Meta. 0 means disallowed content (hate speech, fake news).
-- engagement: 100 means highly compelling hook and clear CTA.
+- compliance: 100 means perfectly safe for Meta. 0 means disallowed content.
+- engagement: 100 means highly compelling hook, clear CTA, and excellent contextual 'why it matters'.
 - tone MUST be neutral.
+- Penalize if 'why_it_matters' invents implications not present in the source text.
 """
 
 def score_post(headline, caption, source_text):

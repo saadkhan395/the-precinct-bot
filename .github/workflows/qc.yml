@@ -3,7 +3,6 @@ name: Quality Check
 on:
   workflow_dispatch:
   schedule:
-    # Every 2 hours, offset by 20 min so it runs between schedule and retry.
     - cron: "20 */2 * * *"
 
 permissions:
@@ -24,7 +23,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg
 
       - run: pip install requests feedparser pyyaml gspread google-auth groq pillow
 

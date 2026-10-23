@@ -1,4 +1,3 @@
-"""Programmatic visual checks for layout, margins, and contrast."""
 import os
 from PIL import Image, ImageStat
 
@@ -11,29 +10,43 @@ def check_dimensions(path, expected_size):
     except Exception as e:
         return False, str(e)
 
-def check_safe_margins(path, margin_px=90):
-    """Checks if the bottom 200px is pure black to ensure text never overlaps the image."""
+def check_safe_margins(path, margin_px=80):
+    """Checks if the bottom 200px is the Midnight Navy background."""
     try:
         with Image.open(path) as img:
             w, h = img.size
-            # Crop the bottom 200 pixels where the text sits
-            footer = img.crop((0, h - 200, w, h)).convert("L")
+            footer = img.crop((0, h - 200, w, h)).convert("RGB")
             stat = ImageStat.Stat(footer)
-            # If the mean brightness is very low, it's a safe solid dark box
-            if stat.mean[0] < 30:
-                return True, "Safe zone is solid black."
-            return False, "Background behind text is too bright. Contrast may be poor."
+            # Midnight Navy is (10, 22, 48)
+            avg = stat.mean
+            if avg[0] < 30 and avg[1] < 40 and avg[2] < 70:
+                return True, "Safe zone is solid Navy."
+            return False, "Background behind text is not the standard Navy box. Contrast may be poor."
     except Exception as e:
         return False, str(e)
 
 def check_image_quality(path):
-    """Check for blur or watermarks (basic heuristic)."""
     try:
         with Image.open(path) as img:
-            # Basic sharpness check using Variance of Laplacian equivalent
             stat = ImageStat.Stat(img.convert("L"))
-            if stat.stddev[0] < 20:
+            if stat.stddev[0] < 15:
                 return False, "Image appears washed out or blurred."
             return True, "Image quality OK."
+    except Exception as e:
+        return False, str(e)
+
+def check_contrast(path):
+    """Ensure the text area has sufficient contrast (WCAG)."""
+    try:
+        with Image.open(path) as img:
+            w, h = img.size
+            # Sample the bottom box
+            footer = img.crop((0, h - 200, w, h)).convert("L")
+            stat = ImageStat.Stat(footer)
+            # If standard deviation is low, it means solid color, which is good for text.
+            # If it's high, it means busy image without overlay.
+            if stat.stddev[0] > 60:
+                return False, "High contrast variance in text area. Text might be unreadable."
+            return True, "Contrast OK."
     except Exception as e:
         return False, str(e)

@@ -58,6 +58,7 @@ def main():
     except gspread.WorksheetNotFound:
         print("No Research tab yet. Run 'Research News' first.")
         return
+        
     content_ws = get_content_ws(sh)
     headers = content_ws.row_values(1)
     existing_ids = set(content_ws.col_values(headers.index("Content ID") + 1))
@@ -73,15 +74,7 @@ def main():
     source_urls = story["Source URLs"]
     print(f"Story: {story['Headline']} ({outlets})")
     
-caption = (
-    f"📌 {copy['category'].upper()}\n\n"
-    f"{copy['caption']}\n\n"
-    f"💡 Why it matters:\n{copy['why_it_matters']}\n\n"
-    f"{copy['cta']}\n\n"
-    f"Sources: {outlets}\n\n"
-    + " ".join(copy["hashtags"])
-)
-alt = f"{copy['category']} graphic from The Daily Precinct. Headline: {copy['headline']}. Why it matters: {copy['why_it_matters']}. Reported by {outlets}."
+    copy = write_copy(story["Headline"], outlets)
     
     print("Fetching background image...")
     image_url = get_image_for_headline(story["Headline"], source_urls)
@@ -90,8 +83,16 @@ alt = f"{copy['category']} graphic from The Daily Precinct. Headline: {copy['hea
         cid, copy["hook"], copy["headline"], outlets, int(story["Source Count"]), image_count, image_url
     )
 
-    caption = f"{copy['caption']}\n\n{copy['cta']}\n\nSources: {outlets}\n\n" + " ".join(copy["hashtags"])
-    alt = f"News graphic from The Daily Precinct. Headline: {copy['headline']}. Reported by {outlets}."
+    caption = (
+        f"📌 {copy['category'].upper()}\n\n"
+        f"{copy['caption']}\n\n"
+        f"💡 Why it matters:\n{copy['why_it_matters']}\n\n"
+        f"{copy['cta']}\n\n"
+        f"Sources: {outlets}\n\n"
+        + " ".join(copy["hashtags"])
+    )
+    
+    alt = f"{copy['category']} graphic from The Daily Precinct. Headline: {copy['headline']}. Why it matters: {copy['why_it_matters']}. Reported by {outlets}."
     
     values = {
         "Content ID": cid,

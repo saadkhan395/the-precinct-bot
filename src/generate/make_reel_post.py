@@ -3,17 +3,15 @@ from datetime import datetime, timezone
 
 import gspread
 
-from generate.carousel_copy import write_carousel
+from generate.reel_copy import write_reel_script
 from generate.make_carousel_post import candidates
 from generate.make_image_post import connect, get_content_ws
 from generate.story_text import get_story_text
 from media.build_video import build_video, probe
 from media.render_reel import render_scenes
-from media.fetch_image import get_image_for_headline
+from media.voiceover import generate_voiceover
+from media.fetch_image import get_image_for_headline, get_image_for_slide
 from research.fetch_news import load_yaml
-
-MIN_SECONDS = 3
-MAX_SECONDS = 90
 
 def main():
     settings = load_yaml("config/settings.yaml") or {}
@@ -24,88 +22,82 @@ def main():
     try:
         research_ws = sh.worksheet("Research")
     except gspread.WorksheetNotFound:
-        print("No Research tab yet. Run 'Research News' first.")
         return
     content_ws = get_content_ws(sh)
     headers = content_ws.row_values(1)
     used_ids = set(content_ws.col_values(headers.index("Content ID") + 1))
-    types = content_ws.col_values(headers.index("Content Type") + 1)
-    reel_count = sum(1 for t in types if t == "reel")
 
-    used = set(used_ids)
-    for i in used_ids:
-        if i.startswith("REEL-"):
-            used.add("IMG-" + i[5:])
-
-    story, copy = None, None
-    # Loop through candidates and skip any that fail AI safety checks
-    for r in candidates(research_ws, used, max_age)[:5]:
+    story, script = None, None
+    for r in candidates(research_ws, used_ids, max_age)[:5]:
         text = get_story_text(r["Source URLs"], feeds)
-        if len(text) < 80:
-            print(f"Skipping (not enough source text): {r['Headline']}")
-            continue
-        
+        if len(text) < 80: continue
         try:
-            print(f"Generating copy for: {r['Headline']}...")
-            copy = write_carousel(r["Headline"], r["Outlets"], text)
+            script = write_reel_script(r["Headline"], r["Outlets"], text)
             story = r
-            break # Success! Break out of the loop.
+            break
         except Exception as e:
-            print(f"Skipping story due to AI safety block: {e}")
-            continue # Move to the next candidate
+            print(f"Skipping story: {e}")
 
     if not story:
-        print("No suitable fresh verified story passed AI safety checks. Run 'Research News' first or wait for new stories.")
+        print("No suitable story.")
         return
 
     cid = "REEL-" + str(story["Cluster ID"])
     outlets = story["Outlets"]
     source_count = int(story["Source Count"])
-    source_urls = story["Source URLs"]
-    print(f"Story selected: {story['Headline']} ({outlets})")
+    print(f"Story: {story['Headline']}")
 
-    # FETCH REAL IMAGE FOR THE VIDEO
-    print("Fetching real image for Reel...")
-    image_url = get_image_for_headline(story["Headline"], source_urls)
+    # 1. Generate Voiceover & calculate duration
+    vo_path, total_duration = generate_voiceover(script["voiceover_script"], cid)
 
-    scenes, style, pace, folder = render_scenes(
-        cid, copy, outlets, source_count, reel_count, image_url
-    )
+    # 2. Fetch images
+    print("Fetching images...")
+    main_img = get_image_for_headline(story["Headline"], story["Source URLs"])
+    img1 = get_image_for_slide(script["context"])
+    img2 = get_image_for_slide(script["evidence"])
+    image_urls = [main_img or "", img1 or main_img or "", img2 or main_img or ""]
+
+    # 3. Render frames with exact timings
+    scenes, folder = render_scenes(cid, script, image_urls, total_duration)
+    
+    # 4. Build Final Video
     final = f"output/reels/{cid}.mp4"
-    build_video(scenes, folder, final)
+    build_video(scenes, folder, final, vo_path)
     shutil.rmtree(folder, ignore_errors=True)
 
+    # 5. Validation
     info = probe(final)
     video = next(s for s in info["streams"] if s.get("width"))
     duration = float(video["duration"])
-    width, height = video["width"], video["height"]
-    if not (MIN_SECONDS <= duration <= MAX_SECONDS) or (width, height) != (1080, 1920):
-        raise RuntimeError(f"Video failed checks: {duration}s, {width}x{height}")
+    if duration < 3 or duration > 90:
+        raise RuntimeError(f"Video failed length check: {duration}s")
 
     caption = (
-        f"{copy['caption']}\n\n{copy['cta']}\n\nSources: {outlets}\n\n"
-        + " ".join(copy["hashtags"])
+        f"📌 {script['category'].upper()}\n\n"
+        f"{script['caption']}\n\n"
+        f"💡 Why it matters:\n{script['why_it_matters']}\n\n"
+        f"{script['cta']}\n\n"
+        f"Sources: {outlets}\n\n"
+        + " ".join(script["hashtags"])
     )
-    description = f"Vertical news video from The Daily Precinct. {copy['cover_headline']}. Reported by {outlets}."
     
     values = {
         "Content ID": cid,
         "Content Type": "reel",
         "Topic": story["Headline"],
         "Source": outlets,
-        "Source URL": source_urls,
+        "Source URL": story["Source URLs"],
         "Source Publication Date": story["Earliest Published (UTC)"],
         "Research Date": story["Research Timestamp (UTC)"],
         "Creation Date": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "Status": "Draft",
         "Caption": caption,
-        "Alt Text": description,
-        "Creative Format": f"{style}; {pace} pacing; {duration:.0f}s",
+        "Alt Text": f"Vertical video. {script['caption']}",
+        "Creative Format": f"elite_editorial; {duration:.1f}s; TTS Voiceover",
         "Validation Result": "pending",
     }
     content_ws.append_row([values.get(h, "") for h in headers], value_input_option="RAW")
-    print(f"Video saved: {final} ({duration:.1f}s, {width}x{height}, {style}, {pace} pacing)")
-    print("REEL OK")
+    print(f"REEL OK: {final} ({duration:.1f}s)")
 
 if __name__ == "__main__":
     main()

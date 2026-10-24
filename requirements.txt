@@ -7,4 +7,4 @@ pyyaml
 python-dotenv
 tenacity
 pillow
-moviepy
+edge-tts

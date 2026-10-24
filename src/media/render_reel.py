@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 RW, RH = 1080, 1920
 MARGIN = 90
 MAX_W = RW - (MARGIN * 2)
-BOX_TOP = 1100 # Text safe zone for Reels
+BOX_TOP = 1100 
 BOX_BOTTOM = 1600
 
 C_BG = (10, 22, 48)
@@ -15,11 +15,6 @@ C_TEXT = (230, 235, 240)
 C_MUTED = (140, 160, 180)
 
 FONT_PATHS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf"]
-
-PACING = [
-    {"name": "quick", "hook": 3.0, "headline": 3.0, "fact": 4.0, "sources": 3.0, "cta": 3.0},
-    {"name": "standard", "hook": 3.5, "headline": 4.0, "fact": 5.0, "sources": 3.5, "cta": 3.5},
-]
 
 def font(size):
     for p in FONT_PATHS:
@@ -109,30 +104,30 @@ def draw_premium_text(draw, hook, headline):
             draw_center(draw, e["text"], e["font"], y_cursor, e["color"], bg_color=e["bg"])
         y_cursor += e["h"]
 
-def render_scenes(cid, copy, outlets, source_count, index, image_urls):
-    pace = PACING[index % len(PACING)]
+def render_scenes(cid, script, image_urls, total_duration):
+    """Distributes exact timing based on script word count and VO duration."""
     folder = f"output/reels/{cid}_frames"
     os.makedirs(folder, exist_ok=True)
     scenes = []
 
-    def save(img, name, seconds):
-        p = f"{folder}/{name}.png"
+    # Calculate word counts to proportionally assign time
+    sections = [
+        {"hook": script["hook"], "text": script["context"], "img": image_urls[0]},
+        {"hook": "THE EVIDENCE", "text": script["evidence"], "img": image_urls[1]},
+        {"hook": "THE FALLOUT", "text": script["conclusion"], "img": image_urls[2]}
+    ]
+    
+    total_words = sum(len(s["text"].split()) + 5 for s in sections) # +5 for the hook title
+    
+    for i, sec in enumerate(sections):
+        # Allocate duration proportionally
+        words = len(sec["text"].split()) + 5
+        duration = (words / total_words) * total_duration
+        
+        img, draw = base_frame(sec["img"])
+        draw_premium_text(draw, sec["hook"], sec["text"])
+        p = f"{folder}/s{i:02d}.png"
         img.save(p, "PNG")
-        scenes.append((p, seconds))
+        scenes.append((p, duration))
 
-    img, draw = base_frame(image_urls[0])
-    draw_premium_text(draw, copy["hook"], copy["cover_headline"])
-    save(img, "s01_premium", pace["hook"] + pace["headline"])
-
-    n = 2
-    for i, s in enumerate(copy["slides"]):
-        for point in s["points"]:
-            if n > 3: break
-            
-            img_url = image_urls[n-1] if n-1 < len(image_urls) else image_urls[0]
-            img, draw = base_frame(img_url)
-            draw_premium_text(draw, s["title"], point)
-            save(img, f"s{n:02d}_fact", pace["fact"])
-            n += 1
-
-    return scenes, "elite_editorial", pace["name"], folder
+    return scenes, folder

@@ -30,7 +30,8 @@ jobs:
           sudo apt-get $APT_RESILIENCE update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get $APT_RESILIENCE install -y -qq --no-install-recommends fonts-dejavu-core
 
-      - run: pip install requests feedparser pyyaml gspread google-auth groq pillow
+      - name: Install Python Dependencies
+        run: pip install requests feedparser pyyaml gspread google-auth groq pillow edge-tts
 
       - run: python src/generate/make_reel_post.py
         env:

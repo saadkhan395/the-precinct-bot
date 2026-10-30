@@ -73,40 +73,36 @@ def main():
     source_count = int(story["Source Count"])
     print(f"Story selected: {story['Headline']} ({outlets})")
 
-    # --- FETCH UNIQUE IMAGES PER SLIDE ---
     print("Fetching real images for carousel slides...")
     image_urls = []
     
-    # 1. Cover image
     cover_img = get_image_for_headline(story["Headline"], story["Source URLs"])
     image_urls.append(cover_img or "")
     
-    # 2. Slide 1 image
     s1_text = copy["slides"][0]["points"][0] if copy["slides"] else story["Headline"]
     s1_img = get_image_for_slide(s1_text)
     image_urls.append(s1_img or cover_img or "")
     
-    # 3. Slide 2 image
     s2_text = copy["slides"][1]["points"][0] if len(copy["slides"]) > 1 else story["Headline"]
     s2_img = get_image_for_slide(s2_text)
     image_urls.append(s2_img or cover_img or "")
-
-    # 4. CTA image (reuses cover)
+    
     image_urls.append(cover_img or "")
 
     paths, style = render_carousel(
         cid, copy, outlets, source_count, carousel_count, image_urls
     )
 
+    # THIS IS THE BLOCK THAT WAS BROKEN:
     caption = (
-    f"📌 {copy['category'].upper()}\n\n"
-    f"{copy['caption']}\n\n"
-    f"💡 Why it matters:\n{copy['why_it_matters']}\n\n"
-    f"{copy['cta']}\n\n"
-    f"Sources: {outlets}\n\n"
-    + " ".join(copy["hashtags"])
-)
+        f"📌 {copy['category'].upper()}\n\n"
+        f"{copy['caption']}\n\n"
+        f"💡 Why it matters:\n{copy['why_it_matters']}\n\n"
+        f"{copy['cta']}\n\n"
+        f"Sources: {outlets}\n\n"
+        + " ".join(copy["hashtags"])
     )
+
     alts = [f"Slide 1: {copy['cover_headline']}"]
     for i, s in enumerate(copy["slides"], start=2):
         alts.append(f"Slide {i}: {s['title']}. " + " ".join(s["points"]))

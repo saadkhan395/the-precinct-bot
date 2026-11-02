@@ -1,6 +1,5 @@
 import shutil
 from datetime import datetime, timezone
-
 import gspread
 
 from generate.reel_copy import write_reel_script
@@ -10,6 +9,7 @@ from generate.story_text import get_story_text
 from media.build_video import build_video, probe
 from media.render_reel import render_scenes
 from media.voiceover import generate_voiceover
+from media.audio_manager import get_track_for_category
 from media.fetch_image import get_image_for_headline, get_image_for_slide
 from research.fetch_news import load_yaml
 
@@ -44,39 +44,54 @@ def main():
 
     cid = "REEL-" + str(story["Cluster ID"])
     outlets = story["Outlets"]
-    source_count = int(story["Source Count"])
-    print(f"Story: {story['Headline']}")
+    print(f"Story: {story['Headline']} | Category: {script['category']}")
 
-    # 1. Generate Voiceover & calculate duration
+    # 1. Generate Voiceover
     vo_path, total_duration = generate_voiceover(script["voiceover_script"], cid)
 
-    # 2. Fetch images
-    print("Fetching images...")
-    main_img = get_image_for_headline(story["Headline"], story["Source URLs"])
-    img1 = get_image_for_slide(script["context"])
-    img2 = get_image_for_slide(script["evidence"])
-    image_urls = [main_img or "", img1 or main_img or "", img2 or main_img or ""]
+    # 2. Fetch 7 Images for the 7 Scenes
+    print("Fetching 7 scene images...")
+    scene_texts = [
+        script["scene_1_hook"], script["scene_2_context"], 
+        script["scene_3_main"], script["scene_4_details"], 
+        script["scene_5_impact"], script["scene_6_next"], script["scene_7_cta"]
+    ]
+    
+    main_img = get_image_for_headline(story["Headline"], story["Source URLs"]) or ""
+    image_urls = [main_img]
+    
+    # Get unique images for scenes 2-6
+    for text in scene_texts[1:6]:
+        img = get_image_for_slide(text)
+        image_urls.append(img or main_img)
+        
+    # Scene 7 is the CTA (reuse main image or use a generic brand image)
+    image_urls.append(main_img)
 
-    # 3. Render frames with exact timings
+    # 3. Fetch Music based on Category
+    music_path = get_track_for_category(script["category"])
+
+    # 4. Render Frames
     scenes, folder = render_scenes(cid, script, image_urls, total_duration)
     
-    # 4. Build Final Video
+    # 5. Build Final Video
     final = f"output/reels/{cid}.mp4"
-    build_video(scenes, folder, final, vo_path)
+    build_video(scenes, folder, final, vo_path, music_path)
     shutil.rmtree(folder, ignore_errors=True)
 
-    # 5. Validation
+    # 6. Validation
     info = probe(final)
     video = next(s for s in info["streams"] if s.get("width"))
     duration = float(video["duration"])
-    if duration < 3 or duration > 90:
+    if duration < 50 or duration > 65:
         raise RuntimeError(f"Video failed length check: {duration}s")
 
+    # 7. Sheet Update
     caption = (
         f"📌 {script['category'].upper()}\n\n"
         f"{script['caption']}\n\n"
         f"💡 Why it matters:\n{script['why_it_matters']}\n\n"
-        f"{script['cta']}\n\n"
+        f"Follow for clear updates on the stories shaping America.\n\n"
         f"Sources: {outlets}\n\n"
         + " ".join(script["hashtags"])
     )
@@ -93,7 +108,7 @@ def main():
         "Status": "Draft",
         "Caption": caption,
         "Alt Text": f"Vertical video. {script['caption']}",
-        "Creative Format": f"elite_editorial; {duration:.1f}s; TTS Voiceover",
+        "Creative Format": f"elite_editorial; {duration:.1f}s; {script['category']} Audio",
         "Validation Result": "pending",
     }
     content_ws.append_row([values.get(h, "") for h in headers], value_input_option="RAW")

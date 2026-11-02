@@ -13,7 +13,6 @@ def run(cmd):
 
 def scene_clip(png, seconds, out):
     frames = int(seconds * FPS)
-    # Subtle push-in motion
     vf = (
         "scale=2160:3840,"
         "zoompan=z='min(zoom+0.0005,1.05)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
@@ -46,18 +45,15 @@ def build_video(scenes, folder, final_path, voiceover_path, music_path):
     if not voiceover_path:
         raise RuntimeError("Voiceover is required for the new pipeline.")
 
-    # Audio Ducking Logic
     if music_path and os.path.exists(music_path):
-        # We use sidechaincompress.
-        # [1:a] = Voiceover, [2:a] = Music
-        # Music is lowered when Voiceover is loud, then amixed.
-audio_filter = (
-    f"[1:a]volume=1.0[vo_raw];"
-    f"[vo_raw]asplit=2[vo_side][vo_mix];"  # Split voiceover into two streams
-    f"[2:a]volume=0.15[bg];"
-    f"[bg][vo_side]sidechaincompress=threshold=0.1:ratio=8:attack=50:release=1000[bg_ducked];"
-    f"[bg_ducked][vo_mix]amix=inputs=2:duration=first:dropout_transition=2[aout]"
-)
+        # FIXED: Added asplit to split the voiceover into two streams
+        audio_filter = (
+            "[1:a]volume=1.0[vo_raw];"
+            "[vo_raw]asplit=2[vo_side][vo_mix];"
+            "[2:a]volume=0.15[bg];"
+            "[bg][vo_side]sidechaincompress=threshold=0.1:ratio=8:attack=50:release=1000[bg_ducked];"
+            "[bg_ducked][vo_mix]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+        )
         run([
             "ffmpeg", "-y",
             "-i", silent_video,
@@ -71,7 +67,7 @@ audio_filter = (
             final_path
         ])
     else:
-        # Fallback to voiceover only if music fails to download
+        # Fallback to voiceover only
         run([
             "ffmpeg", "-y", "-i", silent_video, "-i", voiceover_path,
             "-map", "0:v:0", "-map", "1:a:0",

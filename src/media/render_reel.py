@@ -1,53 +1,80 @@
 import os
 import requests
 import io
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 
+# 60-Second Prompt Specs
 RW, RH = 1080, 1920
-MARGIN = 90
-MAX_W = RW - (MARGIN * 2)
-BOX_TOP = 1100 
-BOX_BOTTOM = 1600
+SAFE_LEFT = 80
+SAFE_RIGHT = 80
+SAFE_TOP = 180
+SAFE_BOTTOM = 260
+MAX_W = RW - (SAFE_LEFT + SAFE_RIGHT) # 920px
 
-C_BG = (10, 22, 48)
-C_ACCENT = (201, 162, 39)
-C_TEXT = (230, 235, 240)
-C_MUTED = (140, 160, 180)
+# Brand Colors
+C_BG = (10, 22, 48)        # Midnight Navy
+C_ACCENT = (201, 162, 39)  # Muted Gold
+C_TEXT = (230, 235, 240)   # Silver/White
+C_MUTED = (140, 160, 180)  # Slate Blue
 
-FONT_PATHS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf"]
+FONT_PATHS = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "C:/Windows/Fonts/arialbd.ttf"
+]
 
 def font(size):
     for p in FONT_PATHS:
         if os.path.exists(p): return ImageFont.truetype(p, size)
     return ImageFont.load_default()
 
-def download_vertical_bg(url):
+def fetch_and_fit_image(url):
+    """Fetches image, applies blurred bg, and contains the original image."""
+    bg = Image.new("RGB", (RW, RH), C_BG)
+    
+    if not url:
+        return bg
+        
     try:
         resp = requests.get(url, timeout=20)
         resp.raise_for_status()
         img = Image.open(io.BytesIO(resp.content)).convert("RGB")
         
-        target_ratio = RW / RH
-        img_ratio = img.width / img.height
-        if img_ratio > target_ratio:
-            new_width = int(target_ratio * img.height)
-            left = (img.width - new_width) // 2
-            img = img.crop((left, 0, left + new_width, img.height))
-        else:
-            new_height = int(img.width / target_ratio)
-            top = (img.height - new_height) // 2
-            img = img.crop((0, top, img.width, top + new_height))
-            
-        img = img.resize((RW, RH), Image.Resampling.LANCZOS)
+        # 1. Create Blurred Background (Fill screen)
+        bg_ratio = max(RW / img.width, RH / img.height)
+        bg_img = img.resize((int(img.width * bg_ratio), int(img.height * bg_ratio)), Image.Resampling.LANCZOS)
         
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([(0, BOX_TOP - 50), (RW, BOX_BOTTOM + 150)], fill=C_BG)
-        return img
-    except Exception:
-        img = Image.new("RGB", (RW, RH), C_BG)
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([(0, BOX_TOP - 50), (RW, BOX_BOTTOM + 150)], fill=C_BG)
-        return img
+        # Crop center of background
+        left = (bg_img.width - RW) // 2
+        top = (bg_img.height - RH) // 2
+        bg_img = bg_img.crop((left, top, left + RW, top + RH))
+        
+        # Blur and Darken
+        bg_img = bg_img.filter(ImageFilter.GaussianBlur(radius=25))
+        enhancer = ImageEnhance.Brightness(bg_img)
+        bg = enhancer.enhance(0.4) # Darken to 40%
+        
+        # 2. Create Foreground Image (Contain aspect ratio)
+        # Max allowed height for foreground is 750px to leave room for text
+        max_fg_w = MAX_W
+        max_fg_h = 750
+        img.thumbnail((max_fg_w, max_fg_h), Image.Resampling.LANCZOS)
+        
+        # Paste centered
+        x_offset = (RW - img.width) // 2
+        y_offset = 350 # Position it slightly above center
+        
+        # Add subtle shadow/border to foreground
+        shadow = Image.new("RGBA", (img.width + 20, img.height + 20), (0,0,0,0))
+        draw_shadow = ImageDraw.Draw(shadow)
+        draw_shadow.rectangle([(0, 0), (img.width + 20, img.height + 20)], fill=(0,0,0,150))
+        
+        bg.paste(shadow, (x_offset - 10, y_offset - 10), shadow)
+        bg.paste(img, (x_offset, y_offset))
+        
+        return bg
+    except Exception as e:
+        print(f"Image processing failed: {e}")
+        return bg
 
 def wrap_text(draw, text, f, max_w):
     lines, cur = [], ""
@@ -61,71 +88,71 @@ def wrap_text(draw, text, f, max_w):
     if cur: lines.append(cur)
     return lines
 
-def draw_center(draw, text, f, y, color, bg_color=None, padding_x=20, padding_y=10):
-    w = draw.textlength(text, font=f)
-    x = (RW - w) / 2
+def draw_text_block(draw, text, f, y_start, color, bg_color=None, max_width=MAX_W):
+    lines = wrap_text(draw, text, f, max_width)
+    y = y_start
+    
+    # Calculate total height for background block
+    line_h = int(f.size * 1.3)
+    total_h = len(lines) * line_h
+    
     if bg_color:
+        # Draw background panel
+        padding_x, padding_y = 30, 20
         draw.rectangle(
-            [(x - padding_x, y - padding_y), (x + w + padding_x, y + f.size + padding_y)],
+            [(SAFE_LEFT - padding_x, y_start - padding_y), 
+             (SAFE_LEFT + max_width + padding_x, y_start + total_h + padding_y)],
             fill=bg_color
         )
-    draw.text((x, y), text, font=f, fill=color)
-
-def base_frame(image_url):
-    img = download_vertical_bg(image_url)
-    draw = ImageDraw.Draw(img)
-    draw.text((MARGIN, 150), "THE DAILY PRECINCT", font=font(40), fill=C_TEXT)
-    draw.rectangle([MARGIN, 210, MARGIN + 150, 218], fill=C_ACCENT)
-    return img, draw
-
-def draw_premium_text(draw, hook, headline):
-    hook_font = font(56)
-    head_font = font(46)
-    
-    hook_lines = wrap_text(draw, hook.upper(), hook_font, MAX_W)
-    head_lines = wrap_text(draw, headline, head_font, MAX_W)
-    
-    elements = []
-    for l in hook_lines:
-        elements.append({"text": l, "font": hook_font, "color": C_BG, "bg": C_ACCENT, "h": int(hook_font.size * 1.3)})
         
-    if hook_lines and head_lines:
-        elements.append({"text": "", "font": head_font, "color": C_BG, "bg": None, "h": 30})
-        
-    for l in head_lines:
-        elements.append({"text": l, "font": head_font, "color": C_TEXT, "bg": None, "h": int(head_font.size * 1.4)})
+    for line in lines:
+        draw.text((SAFE_LEFT, y), line, font=f, fill=color)
+        y += line_h
+    return y
 
-    total_h = sum(e["h"] for e in elements)
-    start_y = BOX_TOP + ((BOX_BOTTOM - BOX_TOP) - total_h) // 2
-    
-    y_cursor = start_y
-    for e in elements:
-        if e["text"]:
-            draw_center(draw, e["text"], e["font"], y_cursor, e["color"], bg_color=e["bg"])
-        y_cursor += e["h"]
+def draw_branding(draw):
+    draw.text((SAFE_LEFT, 100), "THE DAILY PRECINCT", font=font(38), fill=C_TEXT)
+    draw.rectangle([SAFE_LEFT, 155, SAFE_LEFT + 140, 161], fill=C_ACCENT)
 
-def render_scenes(cid, script, image_urls, total_duration):
-    """Distributes exact timing based on script word count and VO duration."""
+def render_scenes(cid, script, image_urls, voiceover_duration):
     folder = f"output/reels/{cid}_frames"
     os.makedirs(folder, exist_ok=True)
     scenes = []
 
-    # Calculate word counts to proportionally assign time
-    sections = [
-        {"hook": script["hook"], "text": script["context"], "img": image_urls[0]},
-        {"hook": "THE EVIDENCE", "text": script["evidence"], "img": image_urls[1]},
-        {"hook": "THE FALLOUT", "text": script["conclusion"], "img": image_urls[2]}
+    # Scene Definitions (Text, Font Size, Bg Color)
+    # 125-145 words = 60 seconds.
+    scene_defs = [
+        {"text": script["scene_1_hook"], "font": 72, "bg": None, "img": image_urls[0]},
+        {"text": script["scene_2_context"], "font": 46, "bg": C_BG, "img": image_urls[1]},
+        {"text": script["scene_3_main"], "font": 46, "bg": C_BG, "img": image_urls[2]},
+        {"text": script["scene_4_details"], "font": 40, "bg": C_BG, "img": image_urls[3]},
+        {"text": script["scene_5_impact"], "font": 46, "bg": C_BG, "img": image_urls[4]},
+        {"text": script["scene_6_next"], "font": 42, "bg": C_BG, "img": image_urls[5]},
+        {"text": script["scene_7_cta"], "font": 44, "bg": C_ACCENT, "img": image_urls[6]}
     ]
+
+    total_words = sum(len(s["text"].split()) for s in scene_defs)
     
-    total_words = sum(len(s["text"].split()) + 5 for s in sections) # +5 for the hook title
-    
-    for i, sec in enumerate(sections):
-        # Allocate duration proportionally
-        words = len(sec["text"].split()) + 5
-        duration = (words / total_words) * total_duration
+    for i, scene in enumerate(scene_defs):
+        # Calculate duration based on word proportion of the 60s video
+        words = len(scene["text"].split())
+        duration = (words / total_words) * voiceover_duration
         
-        img, draw = base_frame(sec["img"])
-        draw_premium_text(draw, sec["hook"], sec["text"])
+        # Prevent 0.5s flashes
+        duration = max(2.0, duration)
+
+        img = fetch_and_fit_image(scene["img"])
+        draw = ImageDraw.Draw(img)
+        draw_branding(draw)
+
+        f = font(scene["font"])
+        
+        # Text color is Navy if background block is Gold, else Silver
+        text_color = C_BG if scene["bg"] == C_ACCENT else C_TEXT
+        
+        # Draw text starting at y=1150 (staying above bottom 260px safe margin)
+        draw_text_block(draw, scene["text"], f, 1150, text_color, bg_color=scene["bg"])
+
         p = f"{folder}/s{i:02d}.png"
         img.save(p, "PNG")
         scenes.append((p, duration))

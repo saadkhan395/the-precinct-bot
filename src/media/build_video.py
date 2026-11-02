@@ -51,12 +51,13 @@ def build_video(scenes, folder, final_path, voiceover_path, music_path):
         # We use sidechaincompress.
         # [1:a] = Voiceover, [2:a] = Music
         # Music is lowered when Voiceover is loud, then amixed.
-        audio_filter = (
-            f"[1:a]volume=1.0[vo];"
-            f"[2:a]volume=0.15[bg];" # Base volume of music
-            f"[bg][vo]sidechaincompress=threshold=0.1:ratio=8:attack=50:release=1000[bg_ducked];"
-            f"[vo][bg_ducked]amix=inputs=2:duration=first:dropout_transition=2[aout]"
-        )
+audio_filter = (
+    f"[1:a]volume=1.0[vo_raw];"
+    f"[vo_raw]asplit=2[vo_side][vo_mix];"  # Split voiceover into two streams
+    f"[2:a]volume=0.15[bg];"
+    f"[bg][vo_side]sidechaincompress=threshold=0.1:ratio=8:attack=50:release=1000[bg_ducked];"
+    f"[bg_ducked][vo_mix]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+)
         run([
             "ffmpeg", "-y",
             "-i", silent_video,

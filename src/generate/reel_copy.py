@@ -3,39 +3,50 @@ import json
 from groq import Groq
 from generate.groq_client import pick_model
 
-SYSTEM = """You are a senior short-form video scriptwriter for a US political news brand.
-Your goal is to write a 30-to-45 second Reel script that retains viewer attention.
+SYSTEM = """You are a senior professional news-video editor and scriptwriter for a US political news brand.
+Your task is to write a 60-second broadcast-quality news script based ONLY on the provided source text.
 
-STRUCTURE REQUIREMENTS:
-1. HOOK: A 5-word maximum opening that immediately states the subject.
-2. CONTEXT: Why this is happening right now.
-3. EVIDENCE: The core fact or quote from the source.
-4. CONCLUSION: What happens next or why it matters.
+STRUCTURE (Total length must be between 125 and 145 words for a 60-second voiceover):
+- Scene 1 (Hook): 00:00-00:04. Compelling question or major development. Max 10 words.
+- Scene 2 (Context): 00:04-00:11. What happened, who is involved. Max 15 words.
+- Scene 3 (Main Dev): 00:11-00:24. The core event. Max 25 words.
+- Scene 4 (Details): 00:24-00:38. Specific verified facts, dates, numbers. Max 30 words.
+- Scene 5 (Impact): 00:38-00:49. What could happen next, broader significance. Max 25 words.
+- Scene 6 (Next): 00:49-00:56. What remains uncertain or the next confirmed event. Max 20 words.
+- Scene 7 (CTA): 00:56-01:00. "Follow The Daily Precinct for clear updates on the stories shaping America."
 
 STRICT RULES:
+- Sound like a credible, authoritative news presenter.
+- Neutral, non-partisan tone.
+- No slow introductions. Start immediately with the hook.
 - Use ONLY facts from the SOURCE TEXT.
-- No slow introductions, no filler, no repeated statements.
-- Keep sentences short and punchy for voiceover.
 
-Return ONLY a JSON object:
+Return ONLY a JSON object with exactly these keys:
 {
-  "category": "Policy Explainer",
-  "hook": "Michigan Senate Showdown",
-  "context": "The final debate turned aggressive as El-Sayed and Rogers clashed.",
-  "evidence": "El-Sayed told Collins to 'shut up' during a heated exchange.",
-  "conclusion": "He refuses to apologize, doubling down on the comment.",
-  "voiceover_script": "The final Michigan Senate debate turned explosive. El-Sayed and Rogers clashed aggressively. At one point, El-Sayed told Collins to shut up during a heated exchange. He refuses to apologize, doubling down on the comment.",
-  "caption": "The Michigan Senate debate got heated. El-Sayed refuses to back down.",
-  "why_it_matters": "This debate highlights the increasing polarization in key swing states.",
-  "cta": "Follow for election updates.",
-  "hashtags": ["#MichiganSenate", "#Politics", "#DailyPrecinct"]
+  "scene_1_hook": "Text for scene 1",
+  "scene_2_context": "Text for scene 2",
+  "scene_3_main": "Text for scene 3",
+  "scene_4_details": "Text for scene 4",
+  "scene_5_impact": "Text for scene 5",
+  "scene_6_next": "Text for scene 6",
+  "scene_7_cta": "Follow The Daily Precinct for clear updates on the stories shaping America.",
+  "category": "Select one: Conflict, Controversy, Breaking, Tragedy, Positive, Economy, Elections, Science",
+  "caption": "2 short sentences summarizing the story.",
+  "why_it_matters": "1-2 sentences explaining the political significance.",
+  "hashtags": ["#USPolitics", "#PoliticsNews", "#DailyPrecinct"]
 }"""
 
 def clean(data):
-    for key in ("category", "hook", "context", "evidence", "conclusion", "voiceover_script", "caption", "why_it_matters", "cta"):
+    required_keys = [
+        "scene_1_hook", "scene_2_context", "scene_3_main", 
+        "scene_4_details", "scene_5_impact", "scene_6_next", "scene_7_cta",
+        "category", "caption", "why_it_matters"
+    ]
+    for key in required_keys:
         if not isinstance(data.get(key), str) or not data[key].strip():
             raise ValueError(f"Missing field: {key}")
         data[key] = data[key].strip()
+        
     tags = data.get("hashtags") or []
     tags = [t if t.startswith("#") else "#" + t for t in tags if isinstance(t, str)]
     data["hashtags"] = tags[:5]
@@ -44,22 +55,41 @@ def clean(data):
 def write_reel_script(headline, outlets, source_text):
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
     model = pick_model(client)
+    
     user = f"Headline: {headline}\nReported by: {outlets}\n\nSOURCE TEXT:\n{source_text[:3000]}"
     
-    for _ in range(3):
+    for attempt in range(3):
         try:
             resp = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}],
                 temperature=0.3,
+                response_format={"type": "json_object"}
             )
             text = resp.choices[0].message.content
-            start = text.find("{")
-            end = text.rfind("}")
-            data = json.loads(text[start:end+1])
-            return clean(data)
+            data = json.loads(text)
+            clean_data = clean(data)
+            
+            # Combine into one script for edge-tts
+            full_script = " ".join([
+                clean_data["scene_1_hook"],
+                clean_data["scene_2_context"],
+                clean_data["scene_3_main"],
+                clean_data["scene_4_details"],
+                clean_data["scene_5_impact"],
+                clean_data["scene_6_next"],
+                clean_data["scene_7_cta"]
+            ])
+            
+            # Check word count (target: 125-145)
+            word_count = len(full_script.split())
+            print(f"Script generated. Word count: {word_count} (Target: 125-145)")
+            
+            clean_data["voiceover_script"] = full_script
+            return clean_data
+            
         except Exception as e:
-            print(f"Script generation attempt failed: {e}")
+            print(f"Script generation attempt {attempt+1} failed: {e}")
             continue
             
     raise RuntimeError("Failed to generate Reel script after 3 attempts.")

@@ -50,7 +50,6 @@ def main():
         done += 1
         cid = row["Content ID"]
         
-        # --- THE FIX: Define ctype and sheet_row here ---
         ctype = str(row.get("Content Type", "")).strip()
         sheet_row = idx + 2
         
@@ -75,10 +74,9 @@ def main():
             ok, msg = check_video_specs(path)
             if not ok: 
                 issues.append(f"VIDEO_QC: {msg}")
-                design_score = 0 # Auto-fail design if video specs fail
+                design_score = 0
 
         # --- 2. AI CONTENT CHECKS ---
-        # (Pass the caption and the new why_it_matters if available)
         ai_data = score_post(row.get("Topic", ""), row.get("Caption", ""), text)
         
         if ai_data.get("spelling_errors"):
@@ -126,6 +124,7 @@ def main():
             if review_ws is None:
                 review_ws = get_review_ws(sh)
                 
+            # THE FIX IS HERE: value_input_option instead of value_input_type
             review_ws.append_row([
                 cid,
                 " | ".join(issues)[:900],
@@ -133,7 +132,7 @@ def main():
                 datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "",
                 "",
-            ], value_input_type="RAW")
+            ], value_input_option="RAW")
             print(f"❌ REJECTED [{final_score}] {cid}")
 
     if done == 0:

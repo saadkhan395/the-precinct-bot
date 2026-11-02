@@ -66,15 +66,24 @@ def main():
         issues = []
         
         # --- 1. VISUAL CHECKS ---
-        expected_size = rules["design_rules"]["image_size"] if ctype == "image" else rules["design_rules"]["video_size"]
-        if ctype == "image":
-            path = f"output/images/{cid}.jpg"
-            ok, msg = check_dimensions(path, expected_size)
-            if not ok: issues.append(f"DESIGN: {msg}")
-            ok, msg = check_safe_margins(path)
-            if not ok: issues.append(f"DESIGN: {msg}")
-            ok, msg = check_image_quality(path)
-            if not ok: issues.append(f"IMAGE: {msg}")
+expected_size = rules["design_rules"]["image_size"] if ctype == "image" else rules["design_rules"]["video_size"]
+
+if ctype == "image":
+    path = f"output/images/{cid}.jpg"
+    ok, msg = check_dimensions(path, expected_size)
+    if not ok: issues.append(f"DESIGN: {msg}")
+    ok, msg = check_safe_margins(path)
+    if not ok: issues.append(f"DESIGN: {msg}")
+    ok, msg = check_image_quality(path)
+    if not ok: issues.append(f"IMAGE: {msg}")
+    
+elif ctype == "reel":
+    path = f"output/reels/{cid}.mp4"
+    ok, msg = check_video_specs(path)
+    if not ok: 
+        issues.append(f"VIDEO_QC: {msg}")
+        # If video fails specs, we auto-reject immediately
+        design_score = 0
 
         # --- 2. AI CONTENT CHECKS ---
         ai_data = score_post(row.get("Topic", ""), row.get("Caption", ""), text)

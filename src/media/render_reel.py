@@ -8,10 +8,10 @@ SAFE_LEFT, SAFE_RIGHT = 80, 80
 SAFE_TOP, SAFE_BOTTOM = 180, 260
 MAX_W = RW - (SAFE_LEFT + SAFE_RIGHT)
 
-C_BG = (10, 22, 48)        
-C_ACCENT = (201, 162, 39)  
-C_TEXT = (230, 235, 240)   
-C_MUTED = (140, 160, 180)  
+C_BG = (10, 22, 48)        # Midnight Navy
+C_ACCENT = (201, 162, 39)  # Muted Gold
+C_TEXT = (230, 235, 240)   # Silver/White
+C_MUTED = (140, 160, 180)  # Slate Blue
 
 FONT_PATHS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf"]
 
@@ -30,20 +30,21 @@ def fetch_and_fit_image(url):
         resp.raise_for_status()
         img = Image.open(io.BytesIO(resp.content)).convert("RGB")
         
-        # 1. Blurred Background
+        # Blurred Background (matches reference)
         bg_ratio = max(RW / img.width, RH / img.height)
         bg_img = img.resize((int(img.width * bg_ratio), int(img.height * bg_ratio)), Image.Resampling.LANCZOS)
         left, top = (bg_img.width - RW) // 2, (bg_img.height - RH) // 2
         bg_img = bg_img.crop((left, top, left + RW, top + RH))
-        bg_img = bg_img.filter(ImageFilter.GaussianBlur(radius=25))
+        bg_img = bg_img.filter(ImageFilter.GaussianBlur(radius=30))
         enhancer = ImageEnhance.Brightness(bg_img)
-        bg = enhancer.enhance(0.4) 
+        bg = enhancer.enhance(0.35) # Darken heavily
         
-        # 2. Foreground Contain (No Cropping)
-        max_fg_w, max_fg_h = MAX_W, 750
+        # Foreground Contain (No Cropping)
+        max_fg_w, max_fg_h = MAX_W, 700
         img.thumbnail((max_fg_w, max_fg_h), Image.Resampling.LANCZOS)
         x_offset, y_offset = (RW - img.width) // 2, 350
         
+        # Shadow
         shadow = Image.new("RGBA", (img.width + 20, img.height + 20), (0,0,0,0))
         draw_shadow = ImageDraw.Draw(shadow)
         draw_shadow.rectangle([(0, 0), (img.width + 20, img.height + 20)], fill=(0,0,0,150))
@@ -66,12 +67,17 @@ def wrap_text(draw, text, f, max_w):
     if cur: lines.append(cur)
     return lines
 
+def draw_branding(draw):
+    draw.text((SAFE_LEFT, 100), "THE DAILY PRECINCT", font=font(38), fill=C_TEXT)
+    draw.rectangle([SAFE_LEFT, 155, SAFE_LEFT + 140, 161], fill=C_ACCENT)
+
 def draw_text_block(draw, text, f, y_start, color, bg_color=None, max_width=MAX_W):
     lines = wrap_text(draw, text, f, max_width)
     y = y_start
     line_h = int(f.size * 1.3)
     
     if bg_color:
+        # Premium Navy Panel
         draw.rectangle(
             [(SAFE_LEFT - 30, y_start - 20), (SAFE_LEFT + max_width + 30, y_start + (len(lines) * line_h) + 20)],
             fill=bg_color
@@ -81,23 +87,19 @@ def draw_text_block(draw, text, f, y_start, color, bg_color=None, max_width=MAX_
         draw.text((SAFE_LEFT, y), line, font=f, fill=color)
         y += line_h
 
-def draw_branding(draw):
-    draw.text((SAFE_LEFT, 100), "THE DAILY PRECINCT", font=font(38), fill=C_TEXT)
-    draw.rectangle([SAFE_LEFT, 155, SAFE_LEFT + 140, 161], fill=C_ACCENT)
-
 def render_scenes(cid, script, image_urls, voiceover_duration):
     folder = f"output/reels/{cid}_frames"
     os.makedirs(folder, exist_ok=True)
     scenes = []
 
     scene_defs = [
-        {"text": script["scene_1_hook"], "font": 72, "bg": None, "img": image_urls[0]},
+        {"text": script["scene_1_hook"], "font": 72, "bg": C_BG, "img": image_urls[0]},
         {"text": script["scene_2_context"], "font": 46, "bg": C_BG, "img": image_urls[1]},
         {"text": script["scene_3_main"], "font": 46, "bg": C_BG, "img": image_urls[2]},
         {"text": script["scene_4_details"], "font": 40, "bg": C_BG, "img": image_urls[3]},
         {"text": script["scene_5_impact"], "font": 46, "bg": C_BG, "img": image_urls[4]},
         {"text": script["scene_6_next"], "font": 42, "bg": C_BG, "img": image_urls[5]},
-        {"text": script["scene_7_cta"], "font": 44, "bg": C_ACCENT, "img": image_urls[6]}
+        {"text": script["scene_7_cta"], "font": 44, "bg": C_ACCENT, "img": image_urls[6]} # GOLD CTA
     ]
 
     total_words = sum(len(s["text"].split()) for s in scene_defs)
@@ -111,6 +113,7 @@ def render_scenes(cid, script, image_urls, voiceover_duration):
         draw_branding(draw)
 
         f = font(scene["font"])
+        # Gold CTA gets Navy Text, everything else gets Silver Text
         text_color = C_BG if scene["bg"] == C_ACCENT else C_TEXT
         
         draw_text_block(draw, scene["text"], f, 1150, text_color, bg_color=scene["bg"])

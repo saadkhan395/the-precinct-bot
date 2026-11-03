@@ -30,7 +30,9 @@ def main():
     story, script = None, None
     for r in candidates(research_ws, used_ids, max_age)[:5]:
         text = get_story_text(r["Source URLs"], feeds)
-        if len(text) < 80: continue
+        if len(text) < 80: 
+            continue
+            
         try:
             script = write_reel_script(r["Headline"], r["Outlets"], text)
             story = r
@@ -46,44 +48,46 @@ def main():
     outlets = story["Outlets"]
     print(f"Story: {story['Headline']} | Category: {script['category']}")
 
-    # 1. Generate Voiceover
-    vo_path, total_duration = generate_voiceover(script["voiceover_script"], cid)
+    # 1. Generate Voiceover & SRT Subtitles
+    vo_path, srt_path, total_duration = generate_voiceover(script["voiceover_script"], cid)
 
-    # 2. Fetch 7 Images for the 7 Scenes
-print("Fetching 7 scene images...")
-scene_texts = [
-    script["scene_1_hook"], script["scene_2_context"], 
-    script["scene_3_main"], script["scene_4_details"], 
-    script["scene_5_impact"], script["scene_6_next"], script["scene_7_cta"]
-]
+    # 2. Fetch 7 Images for the 7 Scenes (Deduplication)
+    print("Fetching 7 scene images...")
+    scene_texts = [
+        script["scene_1_hook"], script["scene_2_context"], 
+        script["scene_3_main"], script["scene_4_details"], 
+        script["scene_5_impact"], script["scene_6_next"], script["scene_7_cta"]
+    ]
+    
+    image_urls = []
+    used_images = set()
+    
+    main_img = get_image_for_headline(story["Headline"], story["Source URLs"])
+    if main_img: 
+        used_images.add(main_img)
+    
+    image_urls.append(main_img)
+    
+    for text in scene_texts[1:6]:
+        img = get_image_for_slide(text)
+        # If no image, or if the image is already used, pass None (triggers Fact Card)
+        if img and img not in used_images:
+            image_urls.append(img)
+            used_images.add(img)
+        else:
+            image_urls.append(None)
+            
+    image_urls.append(main_img)
 
-image_urls = []
-used_images = set()
+    # 3. Fetch Emotional Music based on Category
+    music_path = get_track_for_category(script["category"])
 
-main_img = get_image_for_headline(story["Headline"], story["Source URLs"])
-if main_img: used_images.add(main_img)
-
-# Scene 1 uses the main image
-image_urls.append(main_img)
-
-# Scenes 2-6 get unique images or Fact-Cards
-for text in scene_texts[1:6]:
-    img = get_image_for_slide(text)
-    # Deduplication check: If image is None or already used, send None
-    if img and img not in used_images:
-        image_urls.append(img)
-        used_images.add(img)
-    else:
-        image_urls.append(None) # Triggers Fact-Card
-        
-# Scene 7 (CTA) uses main image again
-image_urls.append(main_img)
     # 4. Render Frames
     scenes, folder = render_scenes(cid, script, image_urls, total_duration)
     
-    # 5. Build Final Video
+    # 5. Build Final Video (with Voiceover, SRT, and Music)
     final = f"output/reels/{cid}.mp4"
-    build_video(scenes, folder, final, vo_path, music_path)
+    build_video(scenes, folder, final, vo_path, srt_path, music_path)
     shutil.rmtree(folder, ignore_errors=True)
 
     # 6. Validation

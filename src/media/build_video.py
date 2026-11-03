@@ -49,8 +49,7 @@ def build_video(scenes, folder, final, vo, srt, music):
     
     subs = f"{folder}/subs.mp4"
     if srt and os.path.exists(srt):
-        # THE FIX: Added Alignment=2 (Bottom Center) and reduced FontSize to 16
-        sub_filter = f"subtitles='{os.path.abspath(srt)}':force_style='FontName=Arial,FontSize=16,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=250,Alignment=2'"
+        sub_filter = f"subtitles='{os.path.abspath(srt)}':force_style='FontName=Arial,FontSize=18,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=350,Alignment=2'"
         run(["ffmpeg", "-y", "-i", silent, "-vf", sub_filter, "-c:v", "libx264", "-crf", "20", subs])
     else:
         subs = silent

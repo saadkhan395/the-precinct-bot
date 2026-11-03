@@ -8,30 +8,57 @@ def run(cmd):
         raise RuntimeError("ffmpeg failed: " + r.stderr[-800:])
     return r.stdout
 
+def scene_clip(png, seconds, index, out):
+    frames = int(seconds * 30)
+    
+    # STAGE 3: Rotating Cinematic Motions
+    motion = index % 4
+    
+    if motion == 0:
+        # Zoom in, pan right
+        z = "min(zoom+0.0008,1.08)"
+        x = "iw/2-(iw/zoom/2) - (on*1.5)"
+        y = "ih/2-(ih/zoom/2)"
+    elif motion == 1:
+        # Zoom out, pan left
+        z = "if(eq(on,1),1.08,max(zoom-0.0008,1.0))"
+        x = "iw/2-(iw/zoom/2) + (on*1.5)"
+        y = "ih/2-(ih/zoom/2)"
+    elif motion == 2:
+        # Zoom in, pan down
+        z = "min(zoom+0.0008,1.08)"
+        x = "iw/2-(iw/zoom/2)"
+        y = "ih/2-(ih/zoom/2) + (on*1.5)"
+    else:
+        # Zoom out, pan up
+        z = "if(eq(on,1),1.08,max(zoom-0.0008,1.0))"
+        x = "iw/2-(iw/zoom/2)"
+        y = "ih/2-(ih/zoom/2) - (on*1.5)"
+
+    # Professional 0.4s Crossfade
+    fade_dur = 0.4
+    fade_out_start = max(0.0, seconds - fade_dur)
+    
+    vf = (
+        "scale=2160:3840," 
+        f"zoompan=z='{z}':x='{x}':y='{y}'"
+        f":d={frames}:s=1080x1920:fps=30,"
+        f"fade=t=in:st=0:d={fade_dur},fade=t=out:st={fade_out_start}:d={fade_dur},format=yuv420p"
+    )
+    
+    run([
+        "ffmpeg", "-y", "-i", png, "-vf", vf, "-frames:v", str(frames),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-r", "30", out
+    ])
+
 def build_video(scenes, folder, final, vo, srt, music):
     clips = []
     total = 0
     
-    # 1. Render Scenes with Ken Burns Motion
+    # 1. Render Scenes with Advanced Motion
     for i, (png, sec) in enumerate(scenes):
         clip = f"{folder}/c{i}.mp4"
-        pan = "-(on*0.5)" if i % 2 == 0 else "+(on*0.5)"
-        
-        # FIX: Ensure fade_out_start is never negative
-        fade_out_start = max(0.0, sec - 0.3)
-        
-        # FIX: Added 'f' prefix to the fade line so it reads the variable correctly
-        vf = (
-            "scale=2160:3840,"
-            f"zoompan=z='min(zoom+0.0005,1.05)':x='iw/2-(iw/zoom/2){pan}':y='ih/2-(ih/zoom/2)'"
-            f":d={int(sec*30)}:s=1080x1920:fps=30,"
-            f"fade=t=in:st=0:d=0.3,fade=t=out:st={fade_out_start}:d=0.3,format=yuv420p"
-        )
-        
-        run([
-            "ffmpeg", "-y", "-i", png, "-vf", vf, "-frames:v", str(int(sec*30)),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-r", "30", clip
-        ])
+        scene_clip(png, sec, i, clip)
         clips.append(clip)
         total += sec
         

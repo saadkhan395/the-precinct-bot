@@ -16,12 +16,18 @@ def build_video(scenes, folder, final, vo, srt, music):
     for i, (png, sec) in enumerate(scenes):
         clip = f"{folder}/c{i}.mp4"
         pan = "-(on*0.5)" if i % 2 == 0 else "+(on*0.5)"
+        
+        # FIX: Ensure fade_out_start is never negative
+        fade_out_start = max(0.0, sec - 0.3)
+        
+        # FIX: Added 'f' prefix to the fade line so it reads the variable correctly
         vf = (
             "scale=2160:3840,"
             f"zoompan=z='min(zoom+0.0005,1.05)':x='iw/2-(iw/zoom/2){pan}':y='ih/2-(ih/zoom/2)'"
             f":d={int(sec*30)}:s=1080x1920:fps=30,"
-            "fade=t=in:st=0:d=0.3,fade=t=out:st={sec-0.3}:d=0.3,format=yuv420p"
+            f"fade=t=in:st=0:d=0.3,fade=t=out:st={fade_out_start}:d=0.3,format=yuv420p"
         )
+        
         run([
             "ffmpeg", "-y", "-i", png, "-vf", vf, "-frames:v", str(int(sec*30)),
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-r", "30", clip

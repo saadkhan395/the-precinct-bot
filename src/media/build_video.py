@@ -11,11 +11,24 @@ def run(cmd):
         raise RuntimeError("ffmpeg failed: " + r.stderr[-800:])
     return r.stdout
 
-def scene_clip(png, seconds, out):
+def scene_clip(png, seconds, index, out):
     frames = int(seconds * FPS)
+    
+    # Ken Burns Effect: Alternate zoom/pan direction based on scene index
+    if index % 2 == 0:
+        # Even scenes: Zoom in and pan slightly left
+        z_expr = "min(zoom+0.0008,1.08)"
+        x_expr = "iw/2-(iw/zoom/2) - (on*0.5)"
+        y_expr = "ih/2-(ih/zoom/2)"
+    else:
+        # Odd scenes: Zoom in and pan slightly right
+        z_expr = "min(zoom+0.0008,1.08)"
+        x_expr = "iw/2-(iw/zoom/2) + (on*0.5)"
+        y_expr = "ih/2-(ih/zoom/2)"
+
     vf = (
         "scale=2160:3840,"
-        "zoompan=z='min(zoom+0.0005,1.05)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        f"zoompan=z='{z_expr}':x='{x_expr}':y='{y_expr}'"
         f":d={frames}:s=1080x1920:fps={FPS},"
         f"fade=t=in:st=0:d={FADE},fade=t=out:st={seconds - FADE}:d={FADE},"
         "format=yuv420p"
@@ -30,7 +43,7 @@ def build_video(scenes, folder, final_path, voiceover_path, srt_path, music_path
     total_duration = 0
     for i, (png, seconds) in enumerate(scenes):
         clip = f"{folder}/clip{i:02d}.mp4"
-        scene_clip(png, seconds, clip)
+        scene_clip(png, seconds, i, clip)
         clips.append(clip)
         total_duration += seconds
         
@@ -42,20 +55,15 @@ def build_video(scenes, folder, final_path, voiceover_path, srt_path, music_path
     silent_video = f"{folder}/video_only.mp4"
     run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", silent_video])
 
-    # --- THE FIX: Absolute path and single quotes for subtitles ---
     video_with_subs = f"{folder}/video_subs.mp4"
     
     if srt_path and os.path.exists(srt_path) and os.path.getsize(srt_path) > 0:
         abs_srt = os.path.abspath(srt_path)
-        # Wrap path in single quotes so FFmpeg parses it safely
-        subtitle_filter = f"subtitles='{abs_srt}':force_style='FontName=Arial,FontSize=18,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=260'"
+        subtitle_filter = f"subtitles='{abs_srt}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=260'"
         run(["ffmpeg", "-y", "-i", silent_video, "-vf", subtitle_filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", video_with_subs])
     else:
-        print("WARNING: SRT file missing or empty. Rendering without subtitles.")
+        print("WARNING: SRT file missing. Rendering without subtitles.")
         video_with_subs = silent_video
-
-    if not voiceover_path:
-        raise RuntimeError("Voiceover is required.")
 
     if music_path and os.path.exists(music_path):
         audio_filter = (

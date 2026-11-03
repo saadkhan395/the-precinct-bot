@@ -1,33 +1,29 @@
 import os
-import random
 import requests
 
 AUDIO_DIR = "output/audio"
 
-# Categories mapped to safe, royalty-free public domain tracks
+# Real, distinct royalty-free tracks
 TRACK_MAP = {
     "Conflict": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample.mp3",
     "Tragedy": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample2.mp3",
     "Positive": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample3.mp3",
-    "Economy": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample.mp3",
-    "Elections": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample2.mp3",
-    "Controversy": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample.mp3",
-    "Breaking": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample2.mp3",
-    "Science": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample3.mp3"
+    "Economy": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample4.mp3",
+    "Elections": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample5.mp3",
+    "Controversy": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample6.mp3",
+    "Breaking": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample7.mp3",
+    "Science": "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample8.mp3"
 }
-DEFAULT_TRACK = "https://github.com/rafaelreis-hotmart/Audio-Sample-files/raw/master/sample.mp3"
+DEFAULT_TRACK = TRACK_MAP["Breaking"]
 
 def ensure_audio_library():
     os.makedirs(AUDIO_DIR, exist_ok=True)
 
 def get_track_for_category(category: str) -> str:
-    """Selects a track based on the editorial category."""
     ensure_audio_library()
-    
-    # Fallback if category is missing or unknown
     url = TRACK_MAP.get(category, DEFAULT_TRACK)
-    filename = f"track_{category.lower().replace(' ', '_')}.mp3"
-    filepath = os.path.join(AUDIO_DIR, filename)
+    safe_cat = category.lower().replace(' ', '_') if category else "default"
+    filepath = os.path.join(AUDIO_DIR, f"track_{safe_cat}.mp3")
     
     if not os.path.exists(filepath):
         print(f"Downloading {category} audio track...")
@@ -38,8 +34,6 @@ def get_track_for_category(category: str) -> str:
                     f.write(r.content)
             else:
                 return None
-        except Exception as e:
-            print(f"Failed to download audio: {e}")
+        except Exception:
             return None
-            
     return filepath

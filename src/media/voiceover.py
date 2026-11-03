@@ -1,4 +1,8 @@
-import asyncio, os, subprocess, edge_tts, json
+import asyncio
+import os
+import subprocess
+import edge_tts
+import json
 
 async def _generate_audio(text, mp3_path):
     voice = "en-US-ChristopherNeural"
@@ -26,6 +30,7 @@ def generate_voiceover(script, cid):
     audio_files = []
     scene_durations = []
     
+    print(f"Generating scene-by-scene voiceover for {cid}...")
     for i, text in enumerate(scenes):
         mp3_path = f"{folder}/s{i}.mp3"
         asyncio.run(_generate_audio(text, mp3_path))
@@ -47,7 +52,7 @@ def generate_voiceover(script, cid):
     final_mp3 = f"{folder}/voiceover.mp3"
     subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", final_mp3], capture_output=True)
     
-    # 4. Generate SRT
+    # 4. Generate perfectly synced SRT
     srt_path = f"{folder}/subtitles.srt"
     curr_time = 0.0
     with open(srt_path, "w", encoding="utf-8") as f:
@@ -55,21 +60,24 @@ def generate_voiceover(script, cid):
         for i, text in enumerate(scenes):
             dur = scene_durations[i]
             words = text.split()
+            # Limit to 5 words per subtitle chunk for max 2 lines on screen
             chunks = [" ".join(words[j:j+5]) for j in range(0, len(words), 5)]
             time_per_chunk = dur / max(1, len(chunks))
             
             for chunk in chunks:
                 start = curr_time
                 end = curr_time + time_per_chunk
-                f.write(f"{sub_idx}\n{int(start//3600):02d}:{int((start%3600)//60):02d}:{int(start%60):02d},{int((start-int(start))*1000):03d} --> ")
+                f.write(f"{sub_idx}\n")
+                f.write(f"{int(start//3600):02d}:{int((start%3600)//60):02d}:{int(start%60):02d},{int((start-int(start))*1000):03d} --> ")
                 f.write(f"{int(end//3600):02d}:{int((end%3600)//60):02d}:{int(end%60):02d},{int((end-int(end))*1000):03d}\n")
                 f.write(f"{chunk}\n\n")
                 curr_time += time_per_chunk
                 sub_idx += 1
                 
-            # Add silence to the timeline
+            # Add the 0.5s silence to the timeline
             if i < len(scenes) - 1:
                 curr_time += 0.5
 
     total_duration = _get_duration(final_mp3)
+    print(f"Voiceover and Subtitles generated. Duration: {total_duration:.2f}s")
     return final_mp3, srt_path, total_duration, scene_durations

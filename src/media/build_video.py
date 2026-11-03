@@ -48,11 +48,11 @@ def build_video(scenes, folder, final_path, voiceover_path, music_path):
     if music_path and os.path.exists(music_path):
         # FIXED: Added asplit to split the voiceover into two streams
         audio_filter = (
-            "[1:a]volume=1.0[vo_raw];"
-            "[vo_raw]asplit=2[vo_side][vo_mix];"
-            "[2:a]volume=0.15[bg];"
-            "[bg][vo_side]sidechaincompress=threshold=0.1:ratio=8:attack=50:release=1000[bg_ducked];"
-            "[bg_ducked][vo_mix]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+    "[1:a]loudnorm=I=-14:TP=-1.0:LRA=11[vo_norm];"
+    "[vo_norm]asplit=2[vo_side][vo_mix];"
+    "[2:a]volume=0.15[bg];"
+    "[bg][vo_side]sidechaincompress=threshold=0.1:ratio=8:attack=50:release=1000[bg_ducked];"
+    "[bg_ducked][vo_mix]amix=inputs=2:duration=first:dropout_transition=2[aout]"
         )
         run([
             "ffmpeg", "-y",

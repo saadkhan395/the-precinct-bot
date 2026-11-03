@@ -49,12 +49,12 @@ def build_video(scenes, folder, final, vo, srt, music):
     
     subs = f"{folder}/subs.mp4"
     if srt and os.path.exists(srt):
-        sub_filter = f"subtitles='{os.path.abspath(srt)}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=260'"
+        # THE FIX: Added Alignment=2 (Bottom Center) and reduced FontSize to 16
+        sub_filter = f"subtitles='{os.path.abspath(srt)}':force_style='FontName=Arial,FontSize=16,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=250,Alignment=2'"
         run(["ffmpeg", "-y", "-i", silent, "-vf", sub_filter, "-c:v", "libx264", "-crf", "20", subs])
     else:
         subs = silent
         
-    # STAGE 4 FIX: Smooth Audio Fades (1s intro, 2s outro)
     if music and os.path.exists(music):
         af = (
             f"[1:a]loudnorm=I=-14:TP=-1.0:LRA=11,afade=t=in:st=0:d=1,afade=t=out:st={total-2}:d=2[vo];"
@@ -70,7 +70,6 @@ def build_video(scenes, folder, final, vo, srt, music):
             "-movflags", "+faststart", final
         ])
     else:
-        print("WARNING: Music missing. Rendering Voiceover only.")
         af_vo = f"[1:a]afade=t=in:st=0:d=1,afade=t=out:st={total-2}:d=2[vo]"
         run([
             "ffmpeg", "-y", "-i", subs, "-i", vo,

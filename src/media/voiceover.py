@@ -8,39 +8,68 @@ async def _generate_audio(text, mp3_path):
             if chunk["type"] == "audio":
                 file.write(chunk["data"])
 
-def _generate_failsafe_srt(text, duration, srt_path):
-    words = text.split()
-    # STAGE 4 FIX: Limit to 5 words per chunk to guarantee max 2 lines on screen
-    chunks = []
-    current_chunk = []
-    for word in words:
-        current_chunk.append(word)
-        if len(current_chunk) >= 5:
-            chunks.append(" ".join(current_chunk))
-            current_chunk = []
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
+def _get_duration(path):
+    cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", path]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    return float(json.loads(res.stdout)["format"]["duration"])
 
-    time_per_chunk = duration / max(1, len(chunks))
-    
-    def fmt(s):
-        return f"{int(s//3600):02d}:{int((s%3600)//60):02d}:{int(s%60):02d},{int((s-int(s))*1000):03d}"
-        
-    with open(srt_path, "w", encoding="utf-8") as f:
-        curr = 0.0
-        for i, chunk in enumerate(chunks):
-            f.write(f"{i+1}\n{fmt(curr)} --> {fmt(curr+time_per_chunk)}\n{chunk}\n\n")
-            curr += time_per_chunk
-
-def generate_voiceover(text, cid):
+def generate_voiceover(script, cid):
     folder = f"output/reels/{cid}_audio"
     os.makedirs(folder, exist_ok=True)
-    mp3_path, srt_path = f"{folder}/voiceover.mp3", f"{folder}/subtitles.srt"
     
-    asyncio.run(_generate_audio(text, mp3_path))
+    scenes = [
+        script["scene_1_hook"], script["scene_2_context"], script["scene_3_main"],
+        script["scene_4_details"], script["scene_5_impact"], script["scene_6_next"], script["scene_7_cta"]
+    ]
     
-    cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", mp3_path]
-    duration = float(json.loads(subprocess.run(cmd, capture_output=True, text=True).stdout)["format"]["duration"])
+    # 1. Generate individual audio for each scene
+    audio_files = []
+    scene_durations = []
     
-    _generate_failsafe_srt(text, duration, srt_path)
-    return mp3_path, srt_path, duration
+    for i, text in enumerate(scenes):
+        mp3_path = f"{folder}/s{i}.mp3"
+        asyncio.run(_generate_audio(text, mp3_path))
+        audio_files.append(mp3_path)
+        scene_durations.append(_get_duration(mp3_path))
+        
+    # 2. Create 0.5s silence
+    silence_path = f"{folder}/silence.mp3"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono", "-t", "0.5", "-q:a", "9", "-acodec", "libmp3lame", silence_path], capture_output=True)
+    
+    # 3. Concatenate audio with silence
+    list_path = f"{folder}/list.txt"
+    with open(list_path, "w") as f:
+        for i in range(len(audio_files)):
+            f.write(f"file '{os.path.abspath(audio_files[i])}'\n")
+            if i < len(audio_files) - 1:
+                f.write(f"file '{os.path.abspath(silence_path)}'\n")
+                
+    final_mp3 = f"{folder}/voiceover.mp3"
+    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", final_mp3], capture_output=True)
+    
+    # 4. Generate SRT
+    srt_path = f"{folder}/subtitles.srt"
+    curr_time = 0.0
+    with open(srt_path, "w", encoding="utf-8") as f:
+        sub_idx = 1
+        for i, text in enumerate(scenes):
+            dur = scene_durations[i]
+            words = text.split()
+            chunks = [" ".join(words[j:j+5]) for j in range(0, len(words), 5)]
+            time_per_chunk = dur / max(1, len(chunks))
+            
+            for chunk in chunks:
+                start = curr_time
+                end = curr_time + time_per_chunk
+                f.write(f"{sub_idx}\n{int(start//3600):02d}:{int((start%3600)//60):02d}:{int(start%60):02d},{int((start-int(start))*1000):03d} --> ")
+                f.write(f"{int(end//3600):02d}:{int((end%3600)//60):02d}:{int(end%60):02d},{int((end-int(end))*1000):03d}\n")
+                f.write(f"{chunk}\n\n")
+                curr_time += time_per_chunk
+                sub_idx += 1
+                
+            # Add silence to the timeline
+            if i < len(scenes) - 1:
+                curr_time += 0.5
+
+    total_duration = _get_duration(final_mp3)
+    return final_mp3, srt_path, total_duration, scene_durations

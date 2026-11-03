@@ -220,3 +220,7 @@ __marimo__/
 .streamlit/secrets.toml
 .env
 service_account*
+# Render outputs
+renders/output/
+*.mp4
+.claude/

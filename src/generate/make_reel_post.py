@@ -48,11 +48,13 @@ def main():
     
     for t in [script["scene_2_context"], script["scene_3_main"], script["scene_4_details"], script["scene_5_impact"], script["scene_6_next"]]:
         img = get_image_for_slide(t)
+        # Deduplication logic: If duplicate or missing, append None to trigger Document Card
         if img and img not in used: 
             urls.append(img)
             used.add(img)
         else: 
             urls.append(None)
+            
     urls.append(main_img)
 
     music = get_track_for_category(script["category"])

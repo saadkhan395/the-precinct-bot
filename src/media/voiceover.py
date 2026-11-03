@@ -4,29 +4,35 @@ import subprocess
 import edge_tts
 import json
 
-async def _generate_audio(text, output_path):
-    # Use a professional-sounding US news anchor voice
+async def _generate_audio_and_srt(text, mp3_path, srt_path):
     voice = "en-US-ChristopherNeural" 
     communicate = edge_tts.Communicate(text, voice)
-    await communicate.save(output_path)
+    
+    submaker = edge_tts.SubMaker()
+    with open(mp3_path, "wb") as file:
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                file.write(chunk["data"])
+            elif chunk["type"] == "WordBoundary":
+                submaker.create_sub((chunk["offset"], chunk["duration"]), chunk["text"])
+                
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.write(submaker.generate_subs())
 
 def generate_voiceover(text, cid):
-    """Generates MP3 voiceover and returns the duration in seconds."""
+    """Generates MP3 voiceover and SRT subtitles, returns duration."""
     folder = f"output/reels/{cid}_audio"
     os.makedirs(folder, exist_ok=True)
     mp3_path = f"{folder}/voiceover.mp3"
+    srt_path = f"{folder}/subtitles.srt"
     
-    print(f"Generating voiceover for {cid}...")
-    asyncio.run(_generate_audio(text, mp3_path))
+    print(f"Generating voiceover and subtitles for {cid}...")
+    asyncio.run(_generate_audio_and_srt(text, mp3_path, srt_path))
     
-    # Get exact duration using ffprobe
     cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", mp3_path]
     result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError("ffprobe failed to read voiceover duration.")
-        
     info = json.loads(result.stdout)
     duration = float(info["format"]["duration"])
     
     print(f"Voiceover generated. Duration: {duration:.2f}s")
-    return mp3_path, duration
+    return mp3_path, srt_path, duration

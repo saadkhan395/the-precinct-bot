@@ -2,7 +2,7 @@ import json
 import os
 import subprocess
 
-FPS = 30 # Prompt requires 30 FPS
+FPS = 30 
 FADE = 0.4
 
 def run(cmd):
@@ -25,7 +25,7 @@ def scene_clip(png, seconds, out):
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-r", str(FPS), out,
     ])
 
-def build_video(scenes, folder, final_path, voiceover_path, music_path):
+def build_video(scenes, folder, final_path, voiceover_path, srt_path, music_path):
     clips = []
     total_duration = 0
     for i, (png, seconds) in enumerate(scenes):
@@ -42,21 +42,27 @@ def build_video(scenes, folder, final_path, voiceover_path, music_path):
     silent_video = f"{folder}/video_only.mp4"
     run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", silent_video])
 
+    # Burn subtitles (Priority 8 & 10)
+    subtitle_filter = f"subtitles={srt_path}:force_style='FontName=Arial,FontSize=18,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=260'"
+    
+    video_with_subs = f"{folder}/video_subs.mp4"
+    run(["ffmpeg", "-y", "-i", silent_video, "-vf", subtitle_filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", video_with_subs])
+
     if not voiceover_path:
-        raise RuntimeError("Voiceover is required for the new pipeline.")
+        raise RuntimeError("Voiceover is required.")
 
     if music_path and os.path.exists(music_path):
-        # FIXED: Added asplit to split the voiceover into two streams
+        # Audio Ducking & Loudness Normalization (Priority 8)
         audio_filter = (
-    "[1:a]loudnorm=I=-14:TP=-1.0:LRA=11[vo_norm];"
-    "[vo_norm]asplit=2[vo_side][vo_mix];"
-    "[2:a]volume=0.15[bg];"
-    "[bg][vo_side]sidechaincompress=threshold=0.1:ratio=8:attack=50:release=1000[bg_ducked];"
-    "[bg_ducked][vo_mix]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+            "[1:a]loudnorm=I=-14:TP=-1.0:LRA=11[vo_norm];"
+            "[vo_norm]asplit=2[vo_side][vo_mix];"
+            "[2:a]volume=0.15[bg];"
+            "[bg][vo_side]sidechaincompress=threshold=0.1:ratio=8:attack=50:release=1000[bg_ducked];"
+            "[bg_ducked][vo_mix]amix=inputs=2:duration=first:dropout_transition=2[aout]"
         )
         run([
             "ffmpeg", "-y",
-            "-i", silent_video,
+            "-i", video_with_subs,
             "-i", voiceover_path,
             "-stream_loop", "-1", "-i", music_path,
             "-filter_complex", audio_filter,
@@ -67,9 +73,8 @@ def build_video(scenes, folder, final_path, voiceover_path, music_path):
             final_path
         ])
     else:
-        # Fallback to voiceover only
         run([
-            "ffmpeg", "-y", "-i", silent_video, "-i", voiceover_path,
+            "ffmpeg", "-y", "-i", video_with_subs, "-i", voiceover_path,
             "-map", "0:v:0", "-map", "1:a:0",
             "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
             "-t", str(total_duration),

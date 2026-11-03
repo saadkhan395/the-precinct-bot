@@ -17,7 +17,8 @@ async def _generate_audio_and_srt(text, mp3_path, srt_path):
                 submaker.create_sub((chunk["offset"], chunk["duration"]), chunk["text"])
                 
     with open(srt_path, "w", encoding="utf-8") as f:
-        f.write(submaker.generate_subs())
+        # THE FIX: Changed generate_subs() to get_srt()
+        f.write(submaker.get_srt())
 
 def generate_voiceover(text, cid):
     """Generates MP3 voiceover and SRT subtitles, returns duration."""

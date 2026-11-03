@@ -1,3 +1,21 @@
+# Secrets - NEVER let Claude read
 .env
 .env.local
+.envrc
+service_account*
+*token*.json
+*secret*.txt
+secrets/
+
+# Heavy files - waste of Claude time
+node_modules/
+venv/
+__pycache__/
+*.mp4
+*.mov
+renders/output/
+.temp/
+
+# Claude local
+.claude/
 claude.local.md

@@ -39,7 +39,8 @@ def main():
     cid = "REEL-" + str(story["Cluster ID"])
     print(f"Generating video for: {cid}")
     
-    vo_path, srt_path, total_duration = generate_voiceover(script["voiceover_script"], cid)
+    # Captures scene-by-scene voiceover + exact durations
+    vo_path, srt_path, total_duration, scene_durations = generate_voiceover(script, cid)
 
     urls, used = [], set()
     main_img = get_image_for_headline(story["Headline"], story["Source URLs"])
@@ -48,17 +49,17 @@ def main():
     
     for t in [script["scene_2_context"], script["scene_3_main"], script["scene_4_details"], script["scene_5_impact"], script["scene_6_next"]]:
         img = get_image_for_slide(t)
-        # Deduplication logic: If duplicate or missing, append None to trigger Document Card
         if img and img not in used: 
             urls.append(img)
             used.add(img)
         else: 
             urls.append(None)
-            
     urls.append(main_img)
 
     music = get_track_for_category(script["category"])
-    scenes, folder = render_scenes(cid, script, urls, total_duration)
+    
+    # Pass exact durations to ensure perfect sync
+    scenes, folder = render_scenes(cid, script, urls, scene_durations)
     
     final = f"output/reels/{cid}.mp4"
     build_video(scenes, folder, final, vo_path, srt_path, music)

@@ -10,7 +10,17 @@ async def _generate_audio(text, mp3_path):
 
 def _generate_failsafe_srt(text, duration, srt_path):
     words = text.split()
-    chunks = [" ".join(words[i:i+6]) for i in range(0, len(words), 6)]
+    # STAGE 4 FIX: Limit to 5 words per chunk to guarantee max 2 lines on screen
+    chunks = []
+    current_chunk = []
+    for word in words:
+        current_chunk.append(word)
+        if len(current_chunk) >= 5:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = []
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
     time_per_chunk = duration / max(1, len(chunks))
     
     def fmt(s):
@@ -31,5 +41,6 @@ def generate_voiceover(text, cid):
     
     cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", mp3_path]
     duration = float(json.loads(subprocess.run(cmd, capture_output=True, text=True).stdout)["format"]["duration"])
+    
     _generate_failsafe_srt(text, duration, srt_path)
     return mp3_path, srt_path, duration

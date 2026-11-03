@@ -49,9 +49,11 @@ def build_video(scenes, folder, final, vo, srt, music):
     
     subs = f"{folder}/subs.mp4"
     if srt and os.path.exists(srt):
-        sub_filter = f"subtitles='{os.path.abspath(srt)}':force_style='FontName=Arial,FontSize=18,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=350,Alignment=2'"
+        # FIX: Bottom-center (Alignment=2) with safe margin (MarginV=300)
+        sub_filter = f"subtitles='{os.path.abspath(srt)}':force_style='FontName=Arial,FontSize=18,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=300,Alignment=2'"
         run(["ffmpeg", "-y", "-i", silent, "-vf", sub_filter, "-c:v", "libx264", "-crf", "20", subs])
     else:
+        print("WARNING: SRT file missing. Rendering without subtitles.")
         subs = silent
         
     if music and os.path.exists(music):
@@ -69,6 +71,7 @@ def build_video(scenes, folder, final, vo, srt, music):
             "-movflags", "+faststart", final
         ])
     else:
+        print("WARNING: Music missing. Rendering Voiceover only.")
         af_vo = f"[1:a]afade=t=in:st=0:d=1,afade=t=out:st={total-2}:d=2[vo]"
         run([
             "ffmpeg", "-y", "-i", subs, "-i", vo,

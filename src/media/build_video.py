@@ -1,101 +1,33 @@
-import json
-import os
-import subprocess
-
-FPS = 30 
-FADE = 0.4
+import json, os, subprocess
 
 def run(cmd):
     r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError("ffmpeg failed: " + r.stderr[-800:])
+    if r.returncode != 0: raise RuntimeError(r.stderr[-800:])
     return r.stdout
 
-def scene_clip(png, seconds, index, out):
-    frames = int(seconds * FPS)
-    
-    # Ken Burns Effect: Alternate zoom/pan direction based on scene index
-    if index % 2 == 0:
-        # Even scenes: Zoom in and pan slightly left
-        z_expr = "min(zoom+0.0008,1.08)"
-        x_expr = "iw/2-(iw/zoom/2) - (on*0.5)"
-        y_expr = "ih/2-(ih/zoom/2)"
-    else:
-        # Odd scenes: Zoom in and pan slightly right
-        z_expr = "min(zoom+0.0008,1.08)"
-        x_expr = "iw/2-(iw/zoom/2) + (on*0.5)"
-        y_expr = "ih/2-(ih/zoom/2)"
-
-    vf = (
-        "scale=2160:3840,"
-        f"zoompan=z='{z_expr}':x='{x_expr}':y='{y_expr}'"
-        f":d={frames}:s=1080x1920:fps={FPS},"
-        f"fade=t=in:st=0:d={FADE},fade=t=out:st={seconds - FADE}:d={FADE},"
-        "format=yuv420p"
-    )
-    run([
-        "ffmpeg", "-y", "-i", png, "-vf", vf, "-frames:v", str(frames),
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-r", str(FPS), out,
-    ])
-
-def build_video(scenes, folder, final_path, voiceover_path, srt_path, music_path):
+def build_video(scenes, folder, final, vo, srt, music):
     clips = []
-    total_duration = 0
-    for i, (png, seconds) in enumerate(scenes):
-        clip = f"{folder}/clip{i:02d}.mp4"
-        scene_clip(png, seconds, i, clip)
+    total = 0
+    for i, (png, sec) in enumerate(scenes):
+        clip = f"{folder}/c{i}.mp4"
+        # Ken Burns: Alternating pan
+        pan = "-(on*0.5)" if i%2==0 else "+(on*0.5)"
+        vf = f"scale=2160:3840,zoompan=z='min(zoom+0.0005,1.05)':x='iw/2-(iw/zoom/2){pan}':y='ih/2-(ih/zoom/2)':d={int(sec*30)}:s=1080x1920:fps=30,fade=t=in:st=0:d=0.3,fade=t=out:st={sec-0.3}:d=0.3,format=yuv420p"
+        run(["ffmpeg", "-y", "-i", png, "-vf", vf, "-frames:v", str(int(sec*30)), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-r", "30", clip])
         clips.append(clip)
-        total_duration += seconds
+        total += sec
         
-    list_path = f"{folder}/clips.txt"
-    with open(list_path, "w") as f:
-        for c in clips:
-            f.write(f"file '{os.path.abspath(c)}'\n")
-            
-    silent_video = f"{folder}/video_only.mp4"
-    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", silent_video])
-
-    video_with_subs = f"{folder}/video_subs.mp4"
+    with open(f"{folder}/list.txt", "w") as f:
+        for c in clips: f.write(f"file '{os.path.abspath(c)}'\n")
+        
+    silent = f"{folder}/v.mp4"
+    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", f"{folder}/list.txt", "-c", "copy", silent])
     
-    if srt_path and os.path.exists(srt_path) and os.path.getsize(srt_path) > 0:
-        abs_srt = os.path.abspath(srt_path)
-        subtitle_filter = f"subtitles='{abs_srt}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=260'"
-        run(["ffmpeg", "-y", "-i", silent_video, "-vf", subtitle_filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", video_with_subs])
-    else:
-        print("WARNING: SRT file missing. Rendering without subtitles.")
-        video_with_subs = silent_video
-
-    if music_path and os.path.exists(music_path):
-        audio_filter = (
-            "[1:a]loudnorm=I=-14:TP=-1.0:LRA=11[vo_norm];"
-            "[vo_norm]asplit=2[vo_side][vo_mix];"
-            "[2:a]volume=0.15[bg];"
-            "[bg][vo_side]sidechaincompress=threshold=0.1:ratio=8:attack=50:release=1000[bg_ducked];"
-            "[bg_ducked][vo_mix]amix=inputs=2:duration=first:dropout_transition=2[aout]"
-        )
-        run([
-            "ffmpeg", "-y",
-            "-i", video_with_subs,
-            "-i", voiceover_path,
-            "-stream_loop", "-1", "-i", music_path,
-            "-filter_complex", audio_filter,
-            "-map", "0:v:0", "-map", "[aout]",
-            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-            "-t", str(total_duration),
-            "-movflags", "+faststart",
-            final_path
-        ])
-    else:
-        run([
-            "ffmpeg", "-y", "-i", video_with_subs, "-i", voiceover_path,
-            "-map", "0:v:0", "-map", "1:a:0",
-            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-            "-t", str(total_duration),
-            "-movflags", "+faststart", final_path
-        ])
-        
-    return final_path
-
-def probe(path):
-    out = run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,width,height,duration", "-of", "json", path])
-    return json.loads(out)
+    # Burn Subs
+    subs = f"{folder}/subs.mp4"
+    run(["ffmpeg", "-y", "-i", silent, "-vf", f"subtitles='{os.path.abspath(srt)}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=260'", "-c:v", "libx264", "-crf", "20", subs])
+    
+    # Audio Ducking
+    af = "[1:a]loudnorm=I=-14:TP=-1.0:LRA=11[vo];[vo]asplit=2[v1][v2];[2:a]volume=0.15[bg];[bg][v1]sidechaincompress=threshold=0.1:ratio=8:attack=50:release=1000[duck];[duck][v2]amix=inputs=2:duration=first[aout]"
+    run(["ffmpeg", "-y", "-i", subs, "-i", vo, "-stream_loop", "-1", "-i", music, "-filter_complex", af, "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", str(total), "-movflags", "+faststart", final])
+    return final

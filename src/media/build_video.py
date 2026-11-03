@@ -42,17 +42,22 @@ def build_video(scenes, folder, final_path, voiceover_path, srt_path, music_path
     silent_video = f"{folder}/video_only.mp4"
     run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", silent_video])
 
-    # Burn subtitles (Priority 8 & 10)
-    subtitle_filter = f"subtitles={srt_path}:force_style='FontName=Arial,FontSize=18,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=260'"
-    
+    # --- THE FIX: Absolute path and single quotes for subtitles ---
     video_with_subs = f"{folder}/video_subs.mp4"
-    run(["ffmpeg", "-y", "-i", silent_video, "-vf", subtitle_filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", video_with_subs])
+    
+    if srt_path and os.path.exists(srt_path) and os.path.getsize(srt_path) > 0:
+        abs_srt = os.path.abspath(srt_path)
+        # Wrap path in single quotes so FFmpeg parses it safely
+        subtitle_filter = f"subtitles='{abs_srt}':force_style='FontName=Arial,FontSize=18,PrimaryColour=&H00F0EBE6,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=260'"
+        run(["ffmpeg", "-y", "-i", silent_video, "-vf", subtitle_filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", video_with_subs])
+    else:
+        print("WARNING: SRT file missing or empty. Rendering without subtitles.")
+        video_with_subs = silent_video
 
     if not voiceover_path:
         raise RuntimeError("Voiceover is required.")
 
     if music_path and os.path.exists(music_path):
-        # Audio Ducking & Loudness Normalization (Priority 8)
         audio_filter = (
             "[1:a]loudnorm=I=-14:TP=-1.0:LRA=11[vo_norm];"
             "[vo_norm]asplit=2[vo_side][vo_mix];"

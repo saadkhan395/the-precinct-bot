@@ -50,27 +50,34 @@ def main():
     vo_path, total_duration = generate_voiceover(script["voiceover_script"], cid)
 
     # 2. Fetch 7 Images for the 7 Scenes
-    print("Fetching 7 scene images...")
-    scene_texts = [
-        script["scene_1_hook"], script["scene_2_context"], 
-        script["scene_3_main"], script["scene_4_details"], 
-        script["scene_5_impact"], script["scene_6_next"], script["scene_7_cta"]
-    ]
-    
-    main_img = get_image_for_headline(story["Headline"], story["Source URLs"]) or ""
-    image_urls = [main_img]
-    
-    # Get unique images for scenes 2-6
-    for text in scene_texts[1:6]:
-        img = get_image_for_slide(text)
-        image_urls.append(img or main_img)
+print("Fetching 7 scene images...")
+scene_texts = [
+    script["scene_1_hook"], script["scene_2_context"], 
+    script["scene_3_main"], script["scene_4_details"], 
+    script["scene_5_impact"], script["scene_6_next"], script["scene_7_cta"]
+]
+
+image_urls = []
+used_images = set()
+
+main_img = get_image_for_headline(story["Headline"], story["Source URLs"])
+if main_img: used_images.add(main_img)
+
+# Scene 1 uses the main image
+image_urls.append(main_img)
+
+# Scenes 2-6 get unique images or Fact-Cards
+for text in scene_texts[1:6]:
+    img = get_image_for_slide(text)
+    # Deduplication check: If image is None or already used, send None
+    if img and img not in used_images:
+        image_urls.append(img)
+        used_images.add(img)
+    else:
+        image_urls.append(None) # Triggers Fact-Card
         
-    # Scene 7 is the CTA (reuse main image or use a generic brand image)
-    image_urls.append(main_img)
-
-    # 3. Fetch Music based on Category
-    music_path = get_track_for_category(script["category"])
-
+# Scene 7 (CTA) uses main image again
+image_urls.append(main_img)
     # 4. Render Frames
     scenes, folder = render_scenes(cid, script, image_urls, total_duration)
     

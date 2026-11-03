@@ -1,23 +1,15 @@
-"""QC orchestrator with visual, AI, and strict video checks."""
 from datetime import datetime, timezone
-
 import gspread
+import os
 
 from generate.make_image_post import connect, get_content_ws
 from generate.story_text import get_story_text
 from qc.ai_review import score_post
-from qc.visual_analyzer import (
-    check_dimensions, 
-    check_safe_margins, 
-    check_image_quality, 
-    check_video_specs
-)
+from qc.visual_analyzer import check_dimensions, check_safe_margins, check_image_quality, check_video_specs
 from research.fetch_news import load_yaml
 
 MAX_PER_RUN = 10
-REVIEW_HEADERS = [
-    "Content ID", "Reason Rejected", "Failed Check", "Created At", "Reviewer Decision", "Reviewed At",
-]
+REVIEW_HEADERS = ["Content ID", "Reason Rejected", "Failed Check", "Created At", "Reviewer Decision", "Reviewed At"]
 
 def get_review_ws(sh):
     try:
@@ -49,7 +41,6 @@ def main():
             
         done += 1
         cid = row["Content ID"]
-        
         ctype = str(row.get("Content Type", "")).strip()
         sheet_row = idx + 2
         
@@ -124,7 +115,6 @@ def main():
             if review_ws is None:
                 review_ws = get_review_ws(sh)
                 
-            # THE FIX IS HERE: value_input_option instead of value_input_type
             review_ws.append_row([
                 cid,
                 " | ".join(issues)[:900],

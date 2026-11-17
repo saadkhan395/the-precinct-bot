@@ -1,0 +1,80 @@
+1
+00:00:00,000 --> 00:00:02,220
+California sues OpenAI over preventable
+
+2
+00:00:02,220 --> 00:00:04,440
+hacking risk
+
+3
+00:00:04,940 --> 00:00:07,124
+Attorney general launches lawsuit after
+
+4
+00:00:07,124 --> 00:00:09,307
+Hugging Face breach
+
+5
+00:00:09,807 --> 00:00:12,023
+Investigation began when a Hugging
+
+6
+00:00:12,023 --> 00:00:14,239
+Face model was compromised, exposing
+
+7
+00:00:14,239 --> 00:00:16,455
+AI vulnerabilities
+
+8
+00:00:16,955 --> 00:00:18,989
+State AG says the breach
+
+9
+00:00:18,989 --> 00:00:21,023
+was entirely foreseeable, citing OpenAI's
+
+10
+00:00:21,023 --> 00:00:23,057
+lax security protocols and delayed
+
+11
+00:00:23,057 --> 00:00:25,091
+patches
+
+12
+00:00:25,591 --> 00:00:27,935
+The suit could force stricter
+
+13
+00:00:27,935 --> 00:00:30,279
+safeguards, affect AI development, and
+
+14
+00:00:30,279 --> 00:00:32,623
+set precedent for tech liability
+
+15
+00:00:33,123 --> 00:00:35,043
+OpenAI must respond to allegations
+
+16
+00:00:35,043 --> 00:00:36,963
+and may face court‑ordered security
+
+17
+00:00:36,963 --> 00:00:38,884
+reforms
+
+18
+00:00:39,384 --> 00:00:41,000
+Follow The Daily Precinct for
+
+19
+00:00:41,000 --> 00:00:42,615
+clear updates on the stories
+
+20
+00:00:42,615 --> 00:00:44,231
+shaping America.
+
